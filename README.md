@@ -20,6 +20,6 @@ Custom extensions repository for [StrawVerse](https://github.com/TheYogMehta/Str
 3. Click **+ Add Repo**.
 4. Enter this repository URL or raw marketplace link:
    ```text
-   https://github.com/cyber-winner/EXTENTIONS
+   https://github.com/cyber-winner/strawverse-extentions
    ```
 5. Install **Cinejoy** and **AnimeSalt** with one click!
