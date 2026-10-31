@@ -9,6 +9,70 @@
  */
 
 const crypto = require("crypto");
+const https = require("https");
+const tls = require("tls");
+
+let customTlsAgent = null;
+try {
+  customTlsAgent = new https.Agent({
+    ciphers: tls.DEFAULT_CIPHERS,
+    minVersion: "TLSv1.3",
+    keepAlive: true,
+  });
+} catch (_) {}
+
+function installStreamProxyInterceptor() {
+  if (!global.axios || global.__nhStreamProxyInterceptorInstalled) return;
+  global.__nhStreamProxyInterceptorInstalled = true;
+
+  global.axios.interceptors.request.use(
+    (config) => {
+      try {
+        const urlStr = String(config.url || "").toLowerCase();
+        if (
+          urlStr.includes("r2.1hanime.com") ||
+          urlStr.includes("1hanime.com") ||
+          urlStr.includes("animeidhentai.com") ||
+          urlStr.includes("htstreaming.com") ||
+          urlStr.includes("nhplayer.com") ||
+          urlStr.includes("hentai.tv")
+        ) {
+          // Bypass Android Capacitor bridge to prevent 10s bridge timeout and memory buffering
+          config.strawverseDirectHttp = true;
+
+          // Enforce TLS 1.3 to pass Cloudflare bot detection
+          if (customTlsAgent) {
+            config.httpsAgent = customTlsAgent;
+          }
+
+          // Ensure proper stream headers for Cloudflare R2 CDN validation
+          if (urlStr.includes("r2.1hanime.com") || urlStr.includes("1hanime.com")) {
+            try {
+              const u = new URL(config.url);
+              config.headers = {
+                Host: u.hostname,
+                "User-Agent":
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                Referer: "https://nhplayer.com/",
+                Origin: "https://nhplayer.com",
+                Accept: "*/*",
+                ...(config.headers?.["Range"] || config.headers?.["range"]
+                  ? { Range: config.headers?.["Range"] || config.headers?.["range"] }
+                  : {}),
+              };
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      return config;
+    },
+    (err) => Promise.reject(err)
+  );
+}
+
+try {
+  installStreamProxyInterceptor();
+} catch (_) {}
 
 const baseUrl = "https://animeidhentai.com";
 const aliasUrl = "https://1hanime.com";
@@ -197,11 +261,23 @@ async function solveNhPlayer(embedUrl) {
   }
 
   // Check if player has data-id leading to player.php (v2 core)
-  const dataIdMatch = pageHtml.match(/data-id="([^"]+)"/);
+  const dataIdMatch =
+    pageHtml.match(/data-id="(\/player\.php\?[^"]+)"/) ||
+    pageHtml.match(/src="(\/player\.php\?[^"]+)"/) ||
+    pageHtml.match(/data-id="([^"]+)"/);
   if (dataIdMatch) {
-    const fullPlayerUrl = dataIdMatch[1].startsWith("http")
-      ? dataIdMatch[1]
-      : `https://nhplayer.com${dataIdMatch[1]}`;
+    const playerPath = dataIdMatch[1];
+    let subtitleUrl = null;
+    const subMatch = playerPath.match(/&s=([a-zA-Z0-9%_\-=]+)/);
+    if (subMatch) {
+      try {
+        subtitleUrl = Buffer.from(decodeURIComponent(subMatch[1]), "base64").toString("utf-8");
+      } catch (_) {}
+    }
+
+    const fullPlayerUrl = playerPath.startsWith("http")
+      ? playerPath
+      : `https://nhplayer.com${playerPath}`;
 
     const resPlayer = await httpGet(fullPlayerUrl, {
       headers: {
@@ -385,7 +461,9 @@ async function solveNhPlayer(embedUrl) {
               : JSON.parse(resApi.data);
 
           const subtMatch = playerHtml.match(/src:\s*"([^"]+\.srt)"/);
-          const subtitleUrl = subtMatch ? subtMatch[1] : null;
+          if (!subtitleUrl && subtMatch) {
+            subtitleUrl = subtMatch[1];
+          }
 
           if (data && data.url) {
             return {
@@ -677,6 +755,7 @@ async function fetchEpisode(animeId, page = 1) {
  */
 async function fetchEpisodeSources(episodeId, category = null) {
   try {
+    installStreamProxyInterceptor();
     const epSlug = cleanSlug(episodeId);
     const episodeUrl = `${baseUrl}/${epSlug}`;
 
@@ -862,14 +941,35 @@ async function fetchTrending(page = 1) {
   }
 }
 
+function getHeaders(url) {
+  if (!url) return null;
+  const lower = String(url).toLowerCase();
+  if (
+    lower.includes("r2.1hanime.com") ||
+    lower.includes("1hanime.com") ||
+    lower.includes("animeidhentai.com") ||
+    lower.includes("htstreaming.com") ||
+    lower.includes("nhplayer.com")
+  ) {
+    return {
+      Referer: "https://nhplayer.com/",
+      Origin: "https://nhplayer.com",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    };
+  }
+  return null;
+}
+
 module.exports = {
   name: "1hanime",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   aliasUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
+  getHeaders,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,
