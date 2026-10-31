@@ -14,19 +14,19 @@
     },
     {
       "name": "hentaitv",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "1hanime",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "hanimetv",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "MinAppVersion": "11.0.0",
       "disabled": false
     }

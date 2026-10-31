@@ -11,6 +11,8 @@
 const crypto = require("crypto");
 const https = require("https");
 const tls = require("tls");
+const { spawn, spawnSync } = require("child_process");
+const { PassThrough } = require("stream");
 
 // Modern browser TLS cipher suite (matches Chrome 131)
 const browserCiphers = [
@@ -42,29 +44,228 @@ try {
   });
 } catch (_) {}
 
+let hasCurl = null;
+function isCurlAvailable() {
+  if (hasCurl === null) {
+    try {
+      const r = spawnSync("curl", ["--version"], { timeout: 1000 });
+      hasCurl = r.status === 0;
+    } catch (_) {
+      hasCurl = false;
+    }
+  }
+  return hasCurl;
+}
+
+function curlStreamAdapter(config) {
+  return new Promise((resolve, reject) => {
+    try {
+      const url = config.url;
+      const headers = config.headers || {};
+      const method = (config.method || "GET").toUpperCase();
+
+      const args = ["-s", "-i", "-L"];
+      if (method === "HEAD") {
+        args.push("-I");
+      } else if (method !== "GET") {
+        args.push("-X", method);
+      }
+
+      const flatHeaders = {};
+      if (typeof headers.toJSON === "function") {
+        Object.assign(flatHeaders, headers.toJSON());
+      } else {
+        Object.assign(flatHeaders, headers);
+      }
+
+      if (!flatHeaders["User-Agent"] && !flatHeaders["user-agent"]) {
+        flatHeaders["User-Agent"] =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+      }
+      if (!flatHeaders["Referer"] && !flatHeaders["referer"]) {
+        flatHeaders["Referer"] = "https://nhplayer.com/";
+      }
+      if (!flatHeaders["Origin"] && !flatHeaders["origin"]) {
+        flatHeaders["Origin"] = "https://nhplayer.com";
+      }
+
+      for (const [k, v] of Object.entries(flatHeaders)) {
+        if (v !== undefined && v !== null && v !== "") {
+          args.push("-H", `${k}: ${v}`);
+        }
+      }
+
+      if (config.data) {
+        const bodyStr =
+          typeof config.data === "string"
+            ? config.data
+            : JSON.stringify(config.data);
+        args.push("--data-raw", bodyStr);
+      }
+
+      args.push(url);
+
+      const child = spawn("curl", args, {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      let headerBuffer = Buffer.alloc(0);
+      let headersParsed = false;
+      const dataStream = new PassThrough();
+
+      dataStream.on("close", () => {
+        if (!child.killed) {
+          try {
+            child.kill("SIGKILL");
+          } catch (_) {}
+        }
+      });
+
+      let timeoutTimer = null;
+      if (config.timeout && config.timeout > 0) {
+        timeoutTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+          const err = new Error(`timeout of ${config.timeout}ms exceeded`);
+          err.code = "ECONNABORTED";
+          err.config = config;
+          reject(err);
+        }, config.timeout);
+      }
+
+      child.on("error", (err) => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        reject(err);
+      });
+
+      child.stderr.on("data", () => {});
+
+      child.stdout.on("data", (chunk) => {
+        if (!headersParsed) {
+          headerBuffer = Buffer.concat([headerBuffer, chunk]);
+          const headerEndIndex = headerBuffer.indexOf("\r\n\r\n");
+          const headerEndIndexLF = headerBuffer.indexOf("\n\n");
+          let splitIndex = -1;
+          let delimLength = 4;
+
+          if (headerEndIndex !== -1) {
+            splitIndex = headerEndIndex;
+            delimLength = 4;
+          } else if (headerEndIndexLF !== -1) {
+            splitIndex = headerEndIndexLF;
+            delimLength = 2;
+          }
+
+          if (splitIndex !== -1) {
+            headersParsed = true;
+            if (timeoutTimer) clearTimeout(timeoutTimer);
+
+            const rawHeaderStr = headerBuffer.slice(0, splitIndex).toString("utf8");
+            const bodyRemaining = headerBuffer.slice(splitIndex + delimLength);
+
+            const headerBlocks = rawHeaderStr.split(/\r?\n\r?\n/);
+            const lastHeaderBlock = headerBlocks[headerBlocks.length - 1];
+            const lines = lastHeaderBlock.split(/\r?\n/);
+            const statusLine = lines[0] || "HTTP/1.1 200 OK";
+            const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)/i);
+            const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 200;
+
+            const resHeaders = {};
+            for (let i = 1; i < lines.length; i++) {
+              const colon = lines[i].indexOf(":");
+              if (colon > 0) {
+                const key = lines[i].slice(0, colon).trim().toLowerCase();
+                const val = lines[i].slice(colon + 1).trim();
+                resHeaders[key] = val;
+              }
+            }
+
+            const response = {
+              status: statusCode,
+              statusText: "OK",
+              headers: resHeaders,
+              config,
+              request: null,
+              data:
+                config.responseType === "stream" || method === "HEAD"
+                  ? dataStream
+                  : bodyRemaining,
+            };
+
+            if (config.responseType === "stream") {
+              if (bodyRemaining.length > 0) {
+                dataStream.write(bodyRemaining);
+              }
+            }
+
+            const validateStatus = config.validateStatus;
+            if (!statusCode || !validateStatus || validateStatus(statusCode)) {
+              resolve(response);
+            } else {
+              const err = new Error(`Request failed with status code ${statusCode}`);
+              err.config = config;
+              err.response = response;
+              reject(err);
+            }
+          }
+        } else {
+          if (config.responseType === "stream") {
+            dataStream.write(chunk);
+          }
+        }
+      });
+
+      child.on("close", () => {
+        if (timeoutTimer) clearTimeout(timeoutTimer);
+        if (config.responseType === "stream" || method === "HEAD") {
+          dataStream.end();
+        }
+      });
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
 function installStreamProxyInterceptor() {
-  if (!global.axios || global.__hanimeStreamProxyInterceptorInstalled) return;
-  global.__hanimeStreamProxyInterceptorInstalled = true;
+  if (!global.axios || global.__nhStreamProxyInterceptorInstalled) return;
+  global.__nhStreamProxyInterceptorInstalled = true;
 
   global.axios.interceptors.request.use(
     (config) => {
       try {
         const urlStr = String(config.url || "").toLowerCase();
-        // Bypass Android Capacitor WebView bridge for media streams and nhplayer
-        if (
+        const isMediaStream =
           urlStr.includes("r2.1hanime.com") ||
-          urlStr.includes("cdn.htstreaming.com") ||
+          urlStr.includes("cdn.htstreaming.com");
+        const isTarget =
+          isMediaStream ||
           urlStr.includes("nhplayer.com") ||
+          urlStr.includes("1hanime.com") ||
+          urlStr.includes("animeidhentai.com") ||
+          urlStr.includes("hentai.tv") ||
           urlStr.includes("hanime.red") ||
-          urlStr.includes("hanime.tv")
-        ) {
+          urlStr.includes("hanime.tv");
+
+        if (isTarget) {
           config.strawverseDirectHttp = true;
 
           if (customTlsAgent) {
             config.httpsAgent = customTlsAgent;
           }
 
-          if (urlStr.includes("r2.1hanime.com") || urlStr.includes("cdn.htstreaming.com")) {
+          if (isMediaStream) {
+            if (process.platform !== "android" && isCurlAvailable()) {
+              config.adapter = curlStreamAdapter;
+            } else {
+              const nodeHttpAdapter =
+                (global.axios?.getAdapter && global.axios.getAdapter("http")) ||
+                (typeof axios !== "undefined" && axios.getAdapter && axios.getAdapter("http"));
+              if (nodeHttpAdapter && process.platform !== "android") {
+                config.adapter = nodeHttpAdapter;
+              }
+            }
+
             try {
               const u = new URL(config.url);
               if (config.headers?.set) {
@@ -906,14 +1107,6 @@ async function solveNhPlayer(embedUrl) {
       quality: "1080p",
       url: proxyStreamUrl,
       rawUrl: finalStreamUrl,
-      isM3U8: finalStreamUrl.includes(".m3u8"),
-      type: finalStreamUrl.includes(".m3u8") ? "hls" : "mp4",
-      headers: streamHeaders,
-    },
-    {
-      name: "NHPlayer Direct (1080p)",
-      quality: "1080p (Direct)",
-      url: finalStreamUrl,
       isM3U8: finalStreamUrl.includes(".m3u8"),
       type: finalStreamUrl.includes(".m3u8") ? "hls" : "mp4",
       headers: streamHeaders,
