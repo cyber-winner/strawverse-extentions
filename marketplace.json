@@ -23,6 +23,12 @@
       "version": "1.0.3",
       "MinAppVersion": "11.0.0",
       "disabled": false
+    },
+    {
+      "name": "hanimetv",
+      "version": "1.0.0",
+      "MinAppVersion": "11.0.0",
+      "disabled": false
     }
   ]
 }
