@@ -15,7 +15,16 @@ const baseUrl = "https://hentai.tv";
 // Declarative header rules for StrawVerse network stack
 const headerRules = [
   {
-    match: ["hentai.tv", "nhplayer", "nhplayer.com", "1hanime", "htstreaming"],
+    match: [
+      "hentai.tv",
+      "nhplayer",
+      "nhplayer.com",
+      "1hanime",
+      "1hanime.com",
+      "r2.1hanime.com",
+      "htstreaming",
+      "cdn.htstreaming.com",
+    ],
     headers: {
       Referer: "https://nhplayer.com/",
       Origin: "https://nhplayer.com",
@@ -27,7 +36,7 @@ const headerRules = [
 
 const subrequestHeaders = [
   {
-    match: ["1hanime", "r2.1hanime.com", "htstreaming", "cdn.htstreaming.com"],
+    match: ["1hanime", "1hanime.com", "r2.1hanime.com", "htstreaming", "cdn.htstreaming.com"],
     headers: {
       Referer: "https://nhplayer.com/",
       Origin: "https://nhplayer.com",
@@ -43,6 +52,18 @@ const bypassDomains = [
   "htstreaming.com",
   "cdn.htstreaming.com",
 ];
+
+// Register dynamic referer rules in StrawVerse StreamProxy
+try {
+  if (typeof global.setDynamicReferer === "function") {
+    global.setDynamicReferer("r2.1hanime.com", "https://nhplayer.com/");
+    global.setDynamicReferer("1hanime.com", "https://nhplayer.com/");
+    global.setDynamicReferer("nhplayer.com", "https://hentai.tv/");
+  }
+  if (typeof global.setFallbackReferer === "function") {
+    global.setFallbackReferer("https://nhplayer.com/");
+  }
+} catch (_) {}
 
 // HTTP helper compatible with StrawVerse global.axios and native fetch
 async function httpGet(url, options = {}) {
@@ -515,16 +536,20 @@ async function fetchEpisodeSources(episodeId, category = null) {
     const resolved = await solveNhPlayer(embedUrl);
 
     // Register stream headers for StrawVerse native playback
-    if (typeof global.registerStreamHeaders === "function") {
-      global.registerStreamHeaders("r2.1hanime.com", {
-        Referer: "https://nhplayer.com/",
-        Origin: "https://nhplayer.com",
-      });
-      global.registerStreamHeaders("nhplayer.com", {
-        Referer: "https://hentai.tv/",
-        Origin: "https://hentai.tv",
-      });
-    }
+    try {
+      if (resolved.streamUrl) {
+        const cdnDomain = new URL(resolved.streamUrl).hostname;
+        if (typeof global.setDynamicReferer === "function") {
+          global.setDynamicReferer(cdnDomain, "https://nhplayer.com/");
+          global.setDynamicReferer("r2.1hanime.com", "https://nhplayer.com/");
+          global.setDynamicReferer("1hanime.com", "https://nhplayer.com/");
+          global.setDynamicReferer("nhplayer.com", `${baseUrl}/`);
+        }
+        if (typeof global.setFallbackReferer === "function") {
+          global.setFallbackReferer("https://nhplayer.com/");
+        }
+      }
+    } catch (_) {}
 
     const sources = [
       {
@@ -536,6 +561,8 @@ async function fetchEpisodeSources(episodeId, category = null) {
         headers: {
           Referer: "https://nhplayer.com/",
           Origin: "https://nhplayer.com",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
         },
       },
     ];
