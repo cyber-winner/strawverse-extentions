@@ -1,22 +1,43 @@
 /**
  * StrawVerse Extension - 1hanime (AnimeIDHentai) Scraper & Stream Resolver
  * Features:
- *  - Native Next.js App Router RSC parser & direct Search API integration
- *  - Reverse-engineered NHPlayer challenge solver (DOM token extraction + client-side PoW)
+ *  - Native Next.js App Router streaming RSC hydration parser & direct search API
+ *  - Direct HTTPS challenge solver (immune to Android WebView bridge cookie & referer stripping)
+ *  - Client-side Proof-of-Work engine for NHPlayer challenge resolution
  *  - Direct 1080p MP4 stream resolution with byte-range seeking
  *  - Automated English subtitle (.srt) extraction
- *  - Dynamic Referer & Origin header rules for Cloudflare R2 CDN bypass
+ *  - Cloudflare R2 CDN bypass with TLS 1.3 agent & declarative header rules
  */
 
 const crypto = require("crypto");
 const https = require("https");
 const tls = require("tls");
 
+const browserCiphers = [
+  "TLS_AES_128_GCM_SHA256",
+  "TLS_AES_256_GCM_SHA384",
+  "TLS_CHACHA20_POLY1305_SHA256",
+  "ECDHE-ECDSA-AES128-GCM-SHA256",
+  "ECDHE-RSA-AES128-GCM-SHA256",
+  "ECDHE-ECDSA-AES256-GCM-SHA384",
+  "ECDHE-RSA-AES256-GCM-SHA384",
+  "ECDHE-ECDSA-CHACHA20-POLY1305",
+  "ECDHE-RSA-CHACHA20-POLY1305",
+  "ECDHE-RSA-AES128-SHA",
+  "ECDHE-RSA-AES256-SHA",
+  "AES128-GCM-SHA256",
+  "AES256-GCM-SHA384",
+  "AES128-SHA",
+  "AES256-SHA",
+].join(":");
+
 let customTlsAgent = null;
 try {
   customTlsAgent = new https.Agent({
-    ciphers: tls.DEFAULT_CIPHERS,
-    minVersion: "TLSv1.3",
+    ciphers: browserCiphers,
+    minVersion: "TLSv1.2",
+    maxVersion: "TLSv1.3",
+    honorCipherOrder: true,
     keepAlive: true,
   });
 } catch (_) {}
@@ -29,29 +50,41 @@ function installStreamProxyInterceptor() {
     (config) => {
       try {
         const urlStr = String(config.url || "").toLowerCase();
-        // ONLY bypass Android Capacitor bridge for the heavy CDN media files
-        if (urlStr.includes("r2.1hanime.com") || urlStr.includes("cdn.htstreaming.com")) {
+        // Bypass Android Capacitor WebView bridge for media streams and nhplayer
+        if (
+          urlStr.includes("r2.1hanime.com") ||
+          urlStr.includes("cdn.htstreaming.com") ||
+          urlStr.includes("nhplayer.com") ||
+          urlStr.includes("1hanime.com") ||
+          urlStr.includes("animeidhentai.com")
+        ) {
           config.strawverseDirectHttp = true;
 
           if (customTlsAgent) {
             config.httpsAgent = customTlsAgent;
           }
 
-          try {
-            const u = new URL(config.url);
-            config.headers = {
-              ...(config.headers || {}),
-              Host: u.hostname,
-              "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-              Referer: "https://nhplayer.com/",
-              Origin: "https://nhplayer.com",
-              Accept: "*/*",
-              ...(config.headers?.["Range"] || config.headers?.["range"]
-                ? { Range: config.headers?.["Range"] || config.headers?.["range"] }
-                : {}),
-            };
-          } catch (_) {}
+          if (urlStr.includes("r2.1hanime.com") || urlStr.includes("cdn.htstreaming.com")) {
+            try {
+              const u = new URL(config.url);
+              if (config.headers?.set) {
+                config.headers.set("Host", u.hostname);
+                config.headers.set(
+                  "User-Agent",
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                );
+                config.headers.set("Referer", "https://nhplayer.com/");
+                config.headers.set("Origin", "https://nhplayer.com");
+              } else {
+                config.headers = config.headers || {};
+                config.headers["Host"] = u.hostname;
+                config.headers["User-Agent"] =
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+                config.headers["Referer"] = "https://nhplayer.com/";
+                config.headers["Origin"] = "https://nhplayer.com";
+              }
+            } catch (_) {}
+          }
         }
       } catch (_) {}
       return config;
@@ -70,17 +103,7 @@ const aliasUrl = "https://1hanime.com";
 // Declarative header rules for StrawVerse network stack
 const headerRules = [
   {
-    match: [
-      "1hanime",
-      "1hanime.com",
-      "animeidhentai",
-      "animeidhentai.com",
-      "nhplayer",
-      "nhplayer.com",
-      "r2.1hanime.com",
-      "htstreaming",
-      "cdn.htstreaming.com",
-    ],
+    match: ["r2.1hanime.com", "cdn.htstreaming.com", "nhplayer.com"],
     headers: {
       Referer: "https://nhplayer.com/",
       Origin: "https://nhplayer.com",
@@ -92,13 +115,7 @@ const headerRules = [
 
 const subrequestHeaders = [
   {
-    match: [
-      "1hanime",
-      "1hanime.com",
-      "r2.1hanime.com",
-      "htstreaming",
-      "cdn.htstreaming.com",
-    ],
+    match: ["r2.1hanime.com", "cdn.htstreaming.com"],
     headers: {
       Referer: "https://nhplayer.com/",
       Origin: "https://nhplayer.com",
@@ -111,7 +128,6 @@ const bypassDomains = [
   "animeidhentai.com",
   "nhplayer.com",
   "r2.1hanime.com",
-  "htstreaming.com",
   "cdn.htstreaming.com",
 ];
 
@@ -128,47 +144,135 @@ try {
   }
 } catch (_) {}
 
-// HTTP helper compatible with StrawVerse global.axios and native fetch
-async function httpGet(url, options = {}) {
-  const reqHeaders = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    ...(options.headers || {}),
-  };
+function extractSetCookies(headers) {
+  if (!headers) return [];
+  const raw =
+    headers["set-cookie"] ||
+    (typeof headers.get === "function" ? headers.get("set-cookie") : null);
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
+}
 
-  if (global.axios) {
-    try {
-      return await global.axios.get(url, {
-        headers: reqHeaders,
-        timeout: options.timeout || 20000,
-        validateStatus: (status) => status < 400,
-      });
-    } catch (err) {
-      if (!options._retry) {
-        return httpGet(url, { ...options, _retry: true });
-      }
-      throw err;
+function updateCookieJar(cookieJar, headers) {
+  if (!cookieJar) return;
+  const rawCookies = extractSetCookies(headers);
+  for (const c of rawCookies) {
+    if (!c) continue;
+    const pair = c.split(";")[0].trim();
+    const eq = pair.indexOf("=");
+    if (eq > 0) {
+      const k = pair.slice(0, eq).trim();
+      const v = pair.slice(eq + 1).trim();
+      if (k && v) cookieJar.set(k, v);
     }
   }
+}
 
-  const timeoutMs = options.timeout || 20000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+function getCookieString(cookieJar) {
+  if (!cookieJar) return "";
+  return [...cookieJar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
+}
 
-  try {
-    const res = await fetch(url, { headers: reqHeaders, signal: controller.signal });
-    const text = await res.text();
-    let data;
+/**
+ * Pure Node.js HTTPS request helper.
+ * Completely immune to Android WebView bridge origin mismatches and header stripping.
+ */
+function directHttpsRequest(urlStr, options = {}) {
+  return new Promise((resolve, reject) => {
     try {
-      data = JSON.parse(text);
-    } catch (_) {
-      data = text;
+      const u = new URL(urlStr);
+      const headers = {
+        Host: u.hostname,
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        ...(options.headers || {}),
+      };
+
+      if (options.cookieJar && !headers["Cookie"] && !headers["cookie"]) {
+        const cStr = getCookieString(options.cookieJar);
+        if (cStr) headers["Cookie"] = cStr;
+      }
+
+      const reqOptions = {
+        hostname: u.hostname,
+        port: u.port || 443,
+        path: u.pathname + u.search,
+        method: options.method || "GET",
+        headers,
+        agent: customTlsAgent || undefined,
+        timeout: options.timeout || 20000,
+      };
+
+      const req = https.request(reqOptions, (res) => {
+        if (options.cookieJar && res.headers["set-cookie"]) {
+          updateCookieJar(options.cookieJar, res.headers);
+        }
+
+        if (
+          res.statusCode >= 300 &&
+          res.statusCode < 400 &&
+          res.headers.location &&
+          (options.redirectCount || 0) < 5
+        ) {
+          const redirectUrl = new URL(res.headers.location, urlStr).toString();
+          return resolve(
+            directHttpsRequest(redirectUrl, {
+              ...options,
+              redirectCount: (options.redirectCount || 0) + 1,
+            })
+          );
+        }
+
+        const chunks = [];
+        res.on("data", (chunk) => chunks.push(chunk));
+        res.on("end", () => {
+          const buffer = Buffer.concat(chunks);
+          const text = buffer.toString("utf-8");
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (_) {
+            data = text;
+          }
+          resolve({ status: res.statusCode, headers: res.headers, data });
+        });
+      });
+
+      req.on("timeout", () => {
+        req.destroy();
+        reject(new Error(`Direct HTTPS request timed out for ${urlStr}`));
+      });
+
+      req.on("error", reject);
+
+      if (options.body) req.write(options.body);
+      req.end();
+    } catch (err) {
+      reject(err);
     }
-    return { data, status: res.status, headers: res.headers };
-  } finally {
-    clearTimeout(timer);
+  });
+}
+
+// HTTP helper with direct Node HTTPS primary and Axios fallback
+async function httpGet(url, options = {}) {
+  try {
+    return await directHttpsRequest(url, options);
+  } catch (err) {
+    if (global.axios) {
+      try {
+        const axiosConfig = {
+          headers: options.headers || {},
+          timeout: options.timeout || 20000,
+          strawverseDirectHttp: true,
+          validateStatus: (status) => status < 400,
+        };
+        if (customTlsAgent) axiosConfig.httpsAgent = customTlsAgent;
+        return await global.axios.get(url, axiosConfig);
+      } catch (_) {}
+    }
+    throw err;
   }
 }
 
@@ -210,33 +314,6 @@ function extractRscPayload(html) {
   } catch (_) {
     return raw.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
   }
-}
-
-function extractSetCookies(headers) {
-  if (!headers) return [];
-  const raw =
-    headers["set-cookie"] ||
-    (typeof headers.get === "function" ? headers.get("set-cookie") : null);
-  if (!raw) return [];
-  return Array.isArray(raw) ? raw : [raw];
-}
-
-function updateCookieJar(cookieJar, headers) {
-  const rawCookies = extractSetCookies(headers);
-  for (const c of rawCookies) {
-    if (!c) continue;
-    const pair = c.split(";")[0].trim();
-    const eq = pair.indexOf("=");
-    if (eq > 0) {
-      const k = pair.slice(0, eq).trim();
-      const v = pair.slice(eq + 1).trim();
-      if (k && v) cookieJar.set(k, v);
-    }
-  }
-}
-
-function getCookieString(cookieJar) {
-  return [...cookieJar.entries()].map(([k, v]) => `${k}=${v}`).join("; ");
 }
 
 function findEmbedUrl(html, rsc, epSlug) {
@@ -312,22 +389,20 @@ function extractEpisodesFromRsc(rscText, targetSlug, defaultCover) {
 
 /**
  * Universal NHPlayer challenge solver.
- * Handles both v2 randomized DOM selectors + PoW and classic v1 challenge tokens.
+ * Uses direct Node.js HTTPS engine to completely bypass Android WebView bridge issues.
  */
 async function solveNhPlayer(embedUrl) {
   if (!embedUrl || typeof embedUrl !== "string") {
     throw new Error("Invalid NHPlayer embed URL.");
   }
-  const ua =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
   const playerUrl = embedUrl.endsWith("/") ? embedUrl : `${embedUrl}/`;
   const cookieJar = new Map();
 
   // 1. Fetch embed page
-  const res1 = await httpGet(playerUrl, {
-    headers: { "User-Agent": ua, Referer: `${baseUrl}/` },
+  const res1 = await directHttpsRequest(playerUrl, {
+    headers: { Referer: `${baseUrl}/` },
+    cookieJar,
   });
-  updateCookieJar(cookieJar, res1.headers);
   const pageHtml = typeof res1.data === "string" ? res1.data : "";
 
   const dataIdMatch =
@@ -353,14 +428,10 @@ async function solveNhPlayer(embedUrl) {
     : `https://nhplayer.com${playerPath}`;
 
   // 2. Fetch player.php
-  const resPlayer = await httpGet(fullPlayerUrl, {
-    headers: {
-      "User-Agent": ua,
-      Referer: playerUrl,
-      Cookie: getCookieString(cookieJar),
-    },
+  const resPlayer = await directHttpsRequest(fullPlayerUrl, {
+    headers: { Referer: playerUrl },
+    cookieJar,
   });
-  updateCookieJar(cookieJar, resPlayer.headers);
   const playerHtml = typeof resPlayer.data === "string" ? resPlayer.data : "";
 
   // Extract v2 challenge parameters safely
@@ -372,14 +443,10 @@ async function solveNhPlayer(embedUrl) {
 
   if (vidMatch && coreMatch) {
     const coreUrl = `https://nhplayer.com/${coreMatch[1]}`;
-    const resCore = await httpGet(coreUrl, {
-      headers: {
-        "User-Agent": ua,
-        Referer: fullPlayerUrl,
-        Cookie: getCookieString(cookieJar),
-      },
+    const resCore = await directHttpsRequest(coreUrl, {
+      headers: { Referer: fullPlayerUrl },
+      cookieJar,
     });
-    updateCookieJar(cookieJar, resCore.headers);
     const coreJs = typeof resCore.data === "string" ? resCore.data : "";
 
     const scMatch =
@@ -494,13 +561,12 @@ async function solveNhPlayer(embedUrl) {
         });
 
         const apiUrl = `https://nhplayer.com/get-video-url-v2.php?${params.toString()}`;
-        const resApi = await httpGet(apiUrl, {
+        const resApi = await directHttpsRequest(apiUrl, {
           headers: {
-            "User-Agent": ua,
             Referer: fullPlayerUrl,
-            Cookie: getCookieString(cookieJar),
             "X-Requested-With": "XMLHttpRequest",
           },
+          cookieJar,
         });
 
         const data =
@@ -537,30 +603,26 @@ async function solveNhPlayer(embedUrl) {
     }
 
     const challengeUrl = `https://nhplayer.com/challenge.php?v=${encodeURIComponent(token1)}`;
-    const res2 = await httpGet(challengeUrl, {
+    const res2 = await directHttpsRequest(challengeUrl, {
       headers: {
-        "User-Agent": ua,
         Referer: fullPlayerUrl,
-        Cookie: getCookieString(cookieJar),
         "X-Requested-With": "XMLHttpRequest",
       },
+      cookieJar,
     });
-    updateCookieJar(cookieJar, res2.headers);
 
     const sigData =
       typeof res2.data === "object" ? res2.data : JSON.parse(res2.data || "{}");
     const signature = sigData.x_signature;
     if (signature) {
       const powUrl = "https://nhplayer.com/pow-challenge.php";
-      const res3 = await httpGet(powUrl, {
+      const res3 = await directHttpsRequest(powUrl, {
         headers: {
-          "User-Agent": ua,
           Referer: fullPlayerUrl,
-          Cookie: getCookieString(cookieJar),
           "X-Requested-With": "XMLHttpRequest",
         },
+        cookieJar,
       });
-      updateCookieJar(cookieJar, res3.headers);
 
       const powData =
         typeof res3.data === "object" ? res3.data : JSON.parse(res3.data || "{}");
@@ -591,13 +653,12 @@ async function solveNhPlayer(embedUrl) {
       });
 
       const apiUrl = `https://nhplayer.com/get-video-url.php?${params.toString()}`;
-      const res4 = await httpGet(apiUrl, {
+      const res4 = await directHttpsRequest(apiUrl, {
         headers: {
-          "User-Agent": ua,
           Referer: fullPlayerUrl,
-          Cookie: getCookieString(cookieJar),
           "X-Requested-With": "XMLHttpRequest",
         },
+        cookieJar,
       });
 
       const data = typeof res4.data === "object" ? res4.data : JSON.parse(res4.data || "{}");
@@ -993,7 +1054,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   aliasUrl,
   headerRules,
