@@ -11,9 +11,8 @@
 
 const crypto = require("crypto");
 const https = require("https");
+const http = require("http");
 const tls = require("tls");
-const { spawn, spawnSync } = require("child_process");
-const { PassThrough } = require("stream");
 
 const browserCiphers = [
   "TLS_AES_128_GCM_SHA256",
@@ -44,40 +43,22 @@ try {
   });
 } catch (_) {}
 
-let hasCurl = null;
-function isCurlAvailable() {
-  if (hasCurl === null) {
-    try {
-      const r = spawnSync("curl", ["--version"], { timeout: 1000 });
-      hasCurl = r.status === 0;
-    } catch (_) {
-      hasCurl = false;
-    }
-  }
-  return hasCurl;
-}
-
-function curlStreamAdapter(config) {
+function nodeHttpsStreamAdapter(config) {
   return new Promise((resolve, reject) => {
     try {
-      const url = config.url;
-      const headers = config.headers || {};
+      const u = new URL(config.url);
       const method = (config.method || "GET").toUpperCase();
 
-      const args = ["-s", "-i", "-L"];
-      if (method === "HEAD") {
-        args.push("-I");
-      } else if (method !== "GET") {
-        args.push("-X", method);
-      }
-
       const flatHeaders = {};
-      if (typeof headers.toJSON === "function") {
-        Object.assign(flatHeaders, headers.toJSON());
-      } else {
-        Object.assign(flatHeaders, headers);
+      if (config.headers) {
+        if (typeof config.headers.toJSON === "function") {
+          Object.assign(flatHeaders, config.headers.toJSON());
+        } else {
+          Object.assign(flatHeaders, config.headers);
+        }
       }
 
+      flatHeaders["Host"] = u.hostname;
       if (!flatHeaders["User-Agent"] && !flatHeaders["user-agent"]) {
         flatHeaders["User-Agent"] =
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -88,139 +69,92 @@ function curlStreamAdapter(config) {
       if (!flatHeaders["Origin"] && !flatHeaders["origin"]) {
         flatHeaders["Origin"] = "https://nhplayer.com";
       }
+      if (!flatHeaders["Accept"] && !flatHeaders["accept"]) {
+        flatHeaders["Accept"] = "*/*";
+      }
+      delete flatHeaders["Accept-Encoding"];
+      delete flatHeaders["accept-encoding"];
 
-      for (const [k, v] of Object.entries(flatHeaders)) {
-        if (v !== undefined && v !== null && v !== "") {
-          args.push("-H", `${k}: ${v}`);
-        }
+      const reqOptions = {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "https:" ? 443 : 80),
+        path: u.pathname + u.search,
+        method: method,
+        headers: flatHeaders,
+      };
+
+      if (customTlsAgent && u.protocol === "https:") {
+        reqOptions.agent = customTlsAgent;
       }
 
-      if (config.data) {
-        const bodyStr =
-          typeof config.data === "string"
-            ? config.data
-            : JSON.stringify(config.data);
-        args.push("--data-raw", bodyStr);
-      }
+      const transport = u.protocol === "https:" ? https : http;
+      const req = transport.request(reqOptions, (res) => {
+        const statusCode = res.statusCode || 200;
+        const resHeaders = res.headers || {};
 
-      args.push(url);
-
-      const child = spawn("curl", args, {
-        windowsHide: true,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-
-      let headerBuffer = Buffer.alloc(0);
-      let headersParsed = false;
-      const dataStream = new PassThrough();
-
-      dataStream.on("close", () => {
-        if (!child.killed) {
-          try {
-            child.kill("SIGKILL");
-          } catch (_) {}
+        if (config.responseType === "stream" || method === "HEAD") {
+          resolve({
+            status: statusCode,
+            statusText: res.statusMessage || "OK",
+            headers: resHeaders,
+            config,
+            request: req,
+            data: res,
+          });
+        } else if (config.responseType === "arraybuffer" || config.responseType === "buffer") {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data: Buffer.concat(chunks),
+            });
+          });
+        } else {
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => (text += chunk));
+          res.on("end", () => {
+            let data = text;
+            try {
+              data = JSON.parse(text);
+            } catch (_) {}
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data,
+            });
+          });
         }
       });
 
-      let timeoutTimer = null;
       if (config.timeout && config.timeout > 0) {
-        timeoutTimer = setTimeout(() => {
-          child.kill("SIGKILL");
-          const err = new Error(`timeout of ${config.timeout}ms exceeded`);
-          err.code = "ECONNABORTED";
-          err.config = config;
-          reject(err);
-        }, config.timeout);
+        req.setTimeout(config.timeout, () => {
+          req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+        });
       }
 
-      child.on("error", (err) => {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
+      req.on("error", (err) => {
         reject(err);
       });
 
-      child.stderr.on("data", () => {});
+      if (config.data) {
+        const body =
+          typeof config.data === "string"
+            ? config.data
+            : JSON.stringify(config.data);
+        req.write(body);
+      }
 
-      child.stdout.on("data", (chunk) => {
-        if (!headersParsed) {
-          headerBuffer = Buffer.concat([headerBuffer, chunk]);
-          const headerEndIndex = headerBuffer.indexOf("\r\n\r\n");
-          const headerEndIndexLF = headerBuffer.indexOf("\n\n");
-          let splitIndex = -1;
-          let delimLength = 4;
-
-          if (headerEndIndex !== -1) {
-            splitIndex = headerEndIndex;
-            delimLength = 4;
-          } else if (headerEndIndexLF !== -1) {
-            splitIndex = headerEndIndexLF;
-            delimLength = 2;
-          }
-
-          if (splitIndex !== -1) {
-            headersParsed = true;
-            if (timeoutTimer) clearTimeout(timeoutTimer);
-
-            const rawHeaderStr = headerBuffer.slice(0, splitIndex).toString("utf8");
-            const bodyRemaining = headerBuffer.slice(splitIndex + delimLength);
-
-            const headerBlocks = rawHeaderStr.split(/\r?\n\r?\n/);
-            const lastHeaderBlock = headerBlocks[headerBlocks.length - 1];
-            const lines = lastHeaderBlock.split(/\r?\n/);
-            const statusLine = lines[0] || "HTTP/1.1 200 OK";
-            const statusMatch = statusLine.match(/HTTP\/[\d.]+\s+(\d+)/i);
-            const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : 200;
-
-            const resHeaders = {};
-            for (let i = 1; i < lines.length; i++) {
-              const colon = lines[i].indexOf(":");
-              if (colon > 0) {
-                const key = lines[i].slice(0, colon).trim().toLowerCase();
-                const val = lines[i].slice(colon + 1).trim();
-                resHeaders[key] = val;
-              }
-            }
-
-            const response = {
-              status: statusCode,
-              statusText: "OK",
-              headers: resHeaders,
-              config,
-              request: null,
-              data:
-                config.responseType === "stream" || method === "HEAD"
-                  ? dataStream
-                  : bodyRemaining,
-            };
-
-            if (config.responseType === "stream") {
-              if (bodyRemaining.length > 0) {
-                dataStream.write(bodyRemaining);
-              }
-            }
-
-            const validateStatus = config.validateStatus;
-            if (!statusCode || !validateStatus || validateStatus(statusCode)) {
-              resolve(response);
-            } else {
-              const err = new Error(`Request failed with status code ${statusCode}`);
-              err.config = config;
-              err.response = response;
-              reject(err);
-            }
-          }
-        } else {
-          if (config.responseType === "stream") {
-            dataStream.write(chunk);
-          }
-        }
-      });
-
-      child.on("close", () => {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (config.responseType === "stream" || method === "HEAD") {
-          dataStream.end();
-        }
-      });
+      req.end();
     } catch (e) {
       reject(e);
     }
@@ -254,18 +188,11 @@ function installStreamProxyInterceptor() {
             config.httpsAgent = customTlsAgent;
           }
 
-          if (isMediaStream) {
-            if (process.platform !== "android" && isCurlAvailable()) {
-              config.adapter = curlStreamAdapter;
-            } else {
-              const nodeHttpAdapter =
-                (global.axios?.getAdapter && global.axios.getAdapter("http")) ||
-                (typeof axios !== "undefined" && axios.getAdapter && axios.getAdapter("http"));
-              if (nodeHttpAdapter && process.platform !== "android") {
-                config.adapter = nodeHttpAdapter;
-              }
-            }
+          if (isMediaStream && process.platform !== "android") {
+            config.adapter = nodeHttpsStreamAdapter;
+          }
 
+          if (isMediaStream) {
             try {
               const u = new URL(config.url);
               if (config.headers?.set) {
@@ -1267,7 +1194,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.4",
+  version: "1.0.6",
   baseUrl,
   aliasUrl,
   headerRules,
