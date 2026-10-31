@@ -142,6 +142,16 @@ try {
   }
 } catch (_) {}
 
+function formatStreamUrl(rawUrl, referer = "https://nhplayer.com/") {
+  if (!rawUrl) return "";
+  const port = global.PORT || (process.platform === "android" ? 3459 : 3000);
+  if (port) {
+    const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : "";
+    return `http://127.0.0.1:${port}/api/stream/segment?url=${encodeURIComponent(rawUrl)}${refParam}`;
+  }
+  return rawUrl;
+}
+
 function cleanSlug(str) {
   if (!str) return "";
   let clean = String(str).trim();
@@ -889,10 +899,20 @@ async function solveNhPlayer(embedUrl) {
     "User-Agent": ua,
   };
 
+  const proxyStreamUrl = formatStreamUrl(finalStreamUrl, "https://nhplayer.com/");
   const sources = [
     {
       name: "NHPlayer (1080p)",
       quality: "1080p",
+      url: proxyStreamUrl,
+      rawUrl: finalStreamUrl,
+      isM3U8: finalStreamUrl.includes(".m3u8"),
+      type: finalStreamUrl.includes(".m3u8") ? "hls" : "mp4",
+      headers: streamHeaders,
+    },
+    {
+      name: "NHPlayer Direct (1080p)",
+      quality: "1080p (Direct)",
       url: finalStreamUrl,
       isM3U8: finalStreamUrl.includes(".m3u8"),
       type: finalStreamUrl.includes(".m3u8") ? "hls" : "mp4",
@@ -1102,7 +1122,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "hanimetv",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules,
   subrequestHeaders,

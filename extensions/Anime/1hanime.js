@@ -144,6 +144,16 @@ try {
   }
 } catch (_) {}
 
+function formatStreamUrl(rawUrl, referer = "https://nhplayer.com/") {
+  if (!rawUrl) return "";
+  const port = global.PORT || (process.platform === "android" ? 3459 : 3000);
+  if (port) {
+    const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : "";
+    return `http://127.0.0.1:${port}/api/stream/segment?url=${encodeURIComponent(rawUrl)}${refParam}`;
+  }
+  return rawUrl;
+}
+
 function extractSetCookies(headers) {
   if (!headers) return [];
   const raw =
@@ -892,10 +902,25 @@ async function fetchEpisodeSources(episodeId, category = null) {
       }
     } catch (_) {}
 
+    const proxyStreamUrl = formatStreamUrl(resolved.streamUrl, "https://nhplayer.com/");
     const sources = [
       {
         name: "NHPlayer (1080p)",
         quality: "1080p",
+        url: proxyStreamUrl,
+        rawUrl: resolved.streamUrl,
+        isM3U8: false,
+        type: "mp4",
+        headers: {
+          Referer: "https://nhplayer.com/",
+          Origin: "https://nhplayer.com",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+      },
+      {
+        name: "NHPlayer Direct (1080p)",
+        quality: "1080p (Direct)",
         url: resolved.streamUrl,
         isM3U8: false,
         type: "mp4",
@@ -1054,7 +1079,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   aliasUrl,
   headerRules,
