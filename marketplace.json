@@ -11,6 +11,12 @@
       "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
+    },
+    {
+      "name": "hentaitv",
+      "version": "1.0.0",
+      "MinAppVersion": "11.0.0",
+      "disabled": false
     }
   ]
 }
