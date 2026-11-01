@@ -30,5 +30,13 @@
       "MinAppVersion": "11.0.0",
       "disabled": false
     }
+  ],
+  "Manga": [
+    {
+      "name": "nhentaixxx",
+      "version": "1.0.0",
+      "MinAppVersion": "11.0.0",
+      "disabled": false
+    }
   ]
 }
