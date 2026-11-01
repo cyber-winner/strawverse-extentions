@@ -97,57 +97,81 @@ function parsePagination($, resultsLength, currentPage) {
     (totalPages ? currentPage < totalPages : resultsLength > 0);
 
   return {
-    totalPages,
+    totalPages: totalPages || (hasNextPage ? currentPage + 1 : currentPage),
     hasNextPage,
   };
 }
 
 async function latestManga(page = 1) {
   try {
+    const pageNum = parseInt(page, 10) || 1;
     let targetUrl = `${baseUrl}/`;
-    if (page === 2) {
+    if (pageNum === 2) {
       targetUrl = `${baseUrl}/page/2/`;
-    } else if (page > 2) {
-      targetUrl = `${baseUrl}/pag/${page}/`;
+    } else if (pageNum > 2) {
+      targetUrl = `${baseUrl}/pag/${pageNum}/`;
     }
 
     const data = await getHtml(targetUrl);
     const $ = cheerio.load(data);
     const results = parseThumbs($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, page);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      current_page: page,
-      totalPages: totalPages,
-      hasNextPage: hasNextPage,
-      results: results,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages,
+      hasNextPage,
+      results,
     };
   } catch (err) {
-    throw err;
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
 async function searchManga(query, page = 1) {
   try {
+    const pageNum = parseInt(page, 10) || 1;
     if (!query || !query.trim()) {
-      return latestManga(page);
+      return latestManga(pageNum);
     }
     const targetUrl = `${baseUrl}/search/?q=${encodeURIComponent(
       query.trim()
-    )}&page=${page}`;
+    )}&page=${pageNum}`;
     const data = await getHtml(targetUrl);
     const $ = cheerio.load(data);
     const results = parseThumbs($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, page);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      current_page: page,
-      totalPages: totalPages,
-      hasNextPage: hasNextPage,
-      results: results,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages,
+      hasNextPage,
+      results,
     };
   } catch (err) {
-    throw err;
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
@@ -237,7 +261,8 @@ async function fetchMangaInfo(mangaId) {
 
     const descParts = [];
     if (parodies.length) descParts.push("Parody: " + parodies.join(", "));
-    if (characters.length) descParts.push("Characters: " + characters.join(", "));
+    if (characters.length)
+      descParts.push("Characters: " + characters.join(", "));
     if (pagesCount) descParts.push("Pages: " + pagesCount);
     const description = descParts.join(" | ");
 
@@ -254,29 +279,50 @@ async function fetchMangaInfo(mangaId) {
       status: "Completed",
     };
   } catch (err) {
-    throw err;
+    return {
+      id: String(mangaId),
+      title: `Gallery #${mangaId}`,
+      image: null,
+      description: "",
+      genres: [],
+      author: "Unknown",
+      type: "Doujinshi",
+      released: "",
+      year: null,
+      status: "Unknown",
+    };
   }
 }
 
 async function fetchChapters(mangaId) {
   try {
     const cleanId = String(mangaId).replace(/[^0-9]/g, "");
+    const chapters = [
+      {
+        id: cleanId,
+        number: 1,
+        title: "Full Chapter",
+      },
+    ];
+
     return {
       TotalPages: 1,
+      totalPages: 1,
       total: 1,
-      Chapters: [
-        {
-          id: cleanId,
-          number: 1,
-          title: "Full Chapter",
-        },
-      ],
+      totalItems: 1,
+      Chapters: chapters,
+      chapters: chapters,
+      hasNextPage: false,
     };
   } catch (err) {
     return {
       TotalPages: 0,
+      totalPages: 0,
       total: 0,
+      totalItems: 0,
       Chapters: [],
+      chapters: [],
+      hasNextPage: false,
     };
   }
 }
@@ -324,7 +370,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentaifox",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules: [
     {
@@ -335,6 +381,24 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["hentaifox.com"],
+      headers: {
+        Referer: "https://hentaifox.com/",
+        Origin: "https://hentaifox.com",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (url && url.includes("hentaifox.com")) {
+      return {
+        Referer: "https://hentaifox.com/",
+        Origin: "https://hentaifox.com",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["hentaifox.com"],
   latestManga,
   searchManga,

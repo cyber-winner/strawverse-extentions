@@ -40,7 +40,7 @@
     },
     {
       "name": "hentaifox",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
@@ -64,43 +64,43 @@
     },
     {
       "name": "imhentai",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "nhentainet",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "hentai2read",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "hentairead",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "simplyhentai",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "hitomi",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
     {
       "name": "hentaiforce",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.0.0",
       "disabled": false
     }

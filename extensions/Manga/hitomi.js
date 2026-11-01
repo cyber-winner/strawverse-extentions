@@ -160,10 +160,11 @@ async function latestManga(page = 1) {
 
     const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : pageNum + 1;
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage: pageNum < totalPages,
+      results,
     };
   } catch (err) {
     return { results: [], page: 1, totalPages: 1, hasNextPage: false };
@@ -227,13 +228,20 @@ async function searchManga(query, page = 1) {
       res.totalItems > 0 ? Math.ceil(res.totalItems / pageSize) : pageNum;
 
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage: pageNum < totalPages,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
@@ -289,15 +297,36 @@ async function fetchMangaInfo(mangaId) {
 }
 
 async function fetchChapters(mangaId) {
-  const cleanId = String(mangaId).replace(/[^0-9]/g, "");
-  return [
-    {
-      id: cleanId,
-      title: "Chapter 1",
-      chapterNumber: 1,
-      releaseDate: null,
-    },
-  ];
+  try {
+    const cleanId = String(mangaId).replace(/[^0-9]/g, "");
+    const chapters = [
+      {
+        id: cleanId,
+        number: 1,
+        title: "Chapter 1",
+      },
+    ];
+
+    return {
+      TotalPages: 1,
+      totalPages: 1,
+      total: 1,
+      totalItems: 1,
+      Chapters: chapters,
+      chapters: chapters,
+      hasNextPage: false,
+    };
+  } catch (err) {
+    return {
+      TotalPages: 0,
+      totalPages: 0,
+      total: 0,
+      totalItems: 0,
+      Chapters: [],
+      chapters: [],
+      hasNextPage: false,
+    };
+  }
 }
 
 async function fetchChapterPages(chapterId) {
@@ -318,7 +347,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hitomi",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules: [
     {
@@ -329,6 +358,29 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["hitomi.la", "gold-usergeneratedcontent.net"],
+      headers: {
+        Referer: "https://hitomi.la/",
+        Origin: "https://hitomi.la",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (
+      url &&
+      (url.includes("hitomi.la") ||
+        url.includes("gold-usergeneratedcontent.net"))
+    ) {
+      return {
+        Referer: "https://hitomi.la/",
+        Origin: "https://hitomi.la",
+      };
+    }
+    return {};
+  },
+  bypassDomains: ["hitomi.la", "gold-usergeneratedcontent.net"],
   latestManga,
   searchManga,
   fetchMangaInfo,

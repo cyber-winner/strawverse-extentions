@@ -263,22 +263,31 @@ async function fetchMangaInfo(mangaId) {
 async function fetchChapters(mangaId) {
   try {
     const cleanId = String(mangaId).replace(/[^0-9]/g, "");
+    const chapters = [
+      {
+        id: cleanId,
+        number: 1,
+        title: "Full Chapter",
+      },
+    ];
     return {
       TotalPages: 1,
+      totalPages: 1,
       total: 1,
-      Chapters: [
-        {
-          id: cleanId,
-          number: 1,
-          title: "Full Chapter",
-        },
-      ],
+      totalItems: 1,
+      Chapters: chapters,
+      chapters: chapters,
+      hasNextPage: false,
     };
   } catch (err) {
     return {
       TotalPages: 0,
+      totalPages: 0,
       total: 0,
+      totalItems: 0,
       Chapters: [],
+      chapters: [],
+      hasNextPage: false,
     };
   }
 }

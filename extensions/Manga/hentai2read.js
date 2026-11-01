@@ -14,6 +14,8 @@
  * service of the target website.
  */
 
+const cheerio = require("cheerio");
+
 const baseUrl = "https://hentai2read.com";
 
 const defaultHeaders = {
@@ -71,7 +73,13 @@ async function latestManga(page = 1) {
     const inertia = await getInertiaData(url);
 
     if (!inertia || !inertia.props) {
-      return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+      return {
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 1,
+        hasNextPage: false,
+        results: [],
+      };
     }
 
     const booksObj = inertia.props.books || {};
@@ -80,24 +88,42 @@ async function latestManga(page = 1) {
 
     const totalPages = booksObj.lastPage || pageNum;
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage: pageNum < totalPages,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
 async function searchManga(query, page = 1) {
   try {
     const pageNum = parseInt(page, 10) || 1;
-    const url = `${baseUrl}/search?q=${encodeURIComponent(query)}&page=${pageNum}`;
+    if (!query || !query.trim()) {
+      return latestManga(pageNum);
+    }
+    const url = `${baseUrl}/search?q=${encodeURIComponent(
+      query.trim()
+    )}&page=${pageNum}`;
     const inertia = await getInertiaData(url);
 
     if (!inertia || !inertia.props) {
-      return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+      return {
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 1,
+        hasNextPage: false,
+        results: [],
+      };
     }
 
     const booksObj = inertia.props.books || {};
@@ -106,13 +132,20 @@ async function searchManga(query, page = 1) {
 
     const totalPages = booksObj.lastPage || pageNum;
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage: pageNum < totalPages,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
@@ -186,31 +219,61 @@ async function fetchChapters(mangaId) {
     const inertia = await getInertiaData(url);
 
     if (inertia && inertia.props && Array.isArray(inertia.props.chapters)) {
-      return inertia.props.chapters.map((chap) => ({
+      const chapters = inertia.props.chapters.map((chap, idx) => ({
         id: (chap.url || "").replace(/^\//, "") || String(chap.id),
-        title: chap.title || `Chapter ${chap.number || 1}`,
-        chapterNumber: parseFloat(chap.number) || 1,
-        releaseDate: chap.date || null,
+        number: parseFloat(chap.number) || idx + 1,
+        title: chap.title || `Chapter ${chap.number || idx + 1}`,
       }));
+
+      return {
+        TotalPages: 1,
+        totalPages: 1,
+        total: chapters.length,
+        totalItems: chapters.length,
+        Chapters: chapters,
+        chapters: chapters,
+        hasNextPage: false,
+      };
     }
 
-    return [
+    const singleChapter = [
       {
         id: cleanPath,
+        number: 1,
         title: "Chapter 1",
-        chapterNumber: 1,
-        releaseDate: null,
       },
     ];
+
+    return {
+      TotalPages: 1,
+      totalPages: 1,
+      total: 1,
+      totalItems: 1,
+      Chapters: singleChapter,
+      chapters: singleChapter,
+      hasNextPage: false,
+    };
   } catch (err) {
-    return [
+    let cleanPath = String(mangaId).trim().replace(/^\//, "");
+    if (!cleanPath.includes("/")) {
+      cleanPath = `doujinshi/${cleanPath}`;
+    }
+    const fallback = [
       {
-        id: String(mangaId),
+        id: cleanPath,
+        number: 1,
         title: "Chapter 1",
-        chapterNumber: 1,
-        releaseDate: null,
       },
     ];
+    return {
+      TotalPages: 1,
+      totalPages: 1,
+      total: 1,
+      totalItems: 1,
+      Chapters: fallback,
+      chapters: fallback,
+      hasNextPage: false,
+    };
   }
 }
 
@@ -238,7 +301,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentai2read",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules: [
     {
@@ -249,6 +312,27 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["hentai2read.com", "hentaicdn.com"],
+      headers: {
+        Referer: "https://hentai2read.com/",
+        Origin: "https://hentai2read.com",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (
+      url &&
+      (url.includes("hentai2read.com") || url.includes("hentaicdn.com"))
+    ) {
+      return {
+        Referer: "https://hentai2read.com/",
+        Origin: "https://hentai2read.com",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["hentai2read.com"],
   latestManga,
   searchManga,

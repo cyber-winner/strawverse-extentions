@@ -36,7 +36,9 @@ if (typeof global.setDynamicReferer === "function") {
 
 async function getHtmlWithFallback(path) {
   const axiosInstance = global.axios || require("axios");
-  const urls = [baseUrl, ...fallbackBases].map((b) => `${b.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`);
+  const urls = [baseUrl, ...fallbackBases].map(
+    (b) => `${b.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`
+  );
 
   for (const url of urls) {
     try {
@@ -44,7 +46,11 @@ async function getHtmlWithFallback(path) {
         headers: defaultHeaders,
         timeout: 8000,
       });
-      if (data && typeof data === "string" && !data.includes("WordPress &rsaquo; Error")) {
+      if (
+        data &&
+        typeof data === "string" &&
+        !data.includes("WordPress &rsaquo; Error")
+      ) {
         return data;
       }
     } catch (_) {}
@@ -56,13 +62,18 @@ function parseItems($) {
   const results = [];
 
   $(".gallery, .manga-item, .thumb, article").each((_, el) => {
-    const a =
-      $(el).find("a.gallery-thumb, a[href*='/view/'], a[href*='/gallery/']").first();
+    const a = $(el)
+      .find("a.gallery-thumb, a[href*='/view/'], a[href*='/gallery/']")
+      .first();
     const href = a.attr("href") || $(el).find("a").first().attr("href");
     if (!href) return;
 
     const m = href.match(/\/(?:view|gallery)\/([^\/]+)/);
-    const id = m ? m[1] : href.replace(/^https?:\/\/[^\/]+\//, "").replace(/^\/+|\/+$/g, "");
+    const id = m
+      ? m[1]
+      : href
+          .replace(/^https?:\/\/[^\/]+\//, "")
+          .replace(/^\/+|\/+$/g, "");
 
     const img = $(el).find("img").first();
     let image =
@@ -76,7 +87,11 @@ function parseItems($) {
     }
 
     let title =
-      $(el).find(".caption, .title, .gallery-title, h2, h3, .text-left").first().text().trim() ||
+      $(el)
+        .find(".caption, .title, .gallery-title, h2, h3, .text-left")
+        .first()
+        .text()
+        .trim() ||
       a.attr("title") ||
       img.attr("alt") ||
       "";
@@ -104,9 +119,12 @@ function parsePagination($, resultsLength, currentPage) {
     }
   });
 
-  const nextLink = $("a[rel='next'], .pagination a.next, a.page-link:contains('Next')").attr("href");
+  const nextLink = $(
+    "a[rel='next'], .pagination a.next, a.page-link:contains('Next')"
+  ).attr("href");
   const hasNextPage =
-    Boolean(nextLink) || (totalPages ? currentPage < totalPages : resultsLength > 0);
+    Boolean(nextLink) ||
+    (totalPages ? currentPage < totalPages : resultsLength > 0);
 
   return {
     totalPages: totalPages || (hasNextPage ? currentPage + 1 : currentPage),
@@ -119,42 +137,83 @@ async function latestManga(page = 1) {
     const pageNum = parseInt(page, 10) || 1;
     const path = pageNum > 1 ? `page/${pageNum}/` : "";
     const html = await getHtmlWithFallback(path);
-    if (!html) return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    if (!html) {
+      return {
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 1,
+        hasNextPage: false,
+        results: [],
+      };
+    }
 
     const $ = cheerio.load(html);
     const results = parseItems($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, pageNum);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
 async function searchManga(query, page = 1) {
   try {
     const pageNum = parseInt(page, 10) || 1;
-    const path = `search?q=${encodeURIComponent(query)}&page=${pageNum}`;
+    if (!query || !query.trim()) {
+      return latestManga(pageNum);
+    }
+    const path = `search?q=${encodeURIComponent(query.trim())}&page=${pageNum}`;
     const html = await getHtmlWithFallback(path);
-    if (!html) return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    if (!html) {
+      return {
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 1,
+        hasNextPage: false,
+        results: [],
+      };
+    }
 
     const $ = cheerio.load(html);
     const results = parseItems($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, pageNum);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages,
       hasNextPage,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
@@ -181,21 +240,27 @@ async function fetchMangaInfo(mangaId) {
       $(".text-left.font-weight-bold, h1, .gallery-title").first().text().trim() ||
       `Hentai #${cleanId}`;
 
-    const coverImg = $("#gallery-main-cover img, .single-thumb img, .cover img").first();
+    const coverImg = $(
+      "#gallery-main-cover img, .single-thumb img, .cover img"
+    ).first();
     let image = coverImg.attr("data-src") || coverImg.attr("src") || null;
     if (image && image.startsWith("//")) image = "https:" + image;
 
     const genres = [];
-    $("div.tag-container:contains('Tags:') a, a[href*='/tag/']").each((_, el) => {
-      const g = $(el).text().trim();
-      if (g && !genres.includes(g)) genres.push(g);
-    });
+    $("div.tag-container:contains('Tags:') a, a[href*='/tag/']").each(
+      (_, el) => {
+        const g = $(el).text().trim();
+        if (g && !genres.includes(g)) genres.push(g);
+      }
+    );
 
     const authors = [];
-    $("div.tag-container:contains('Artists:') a, a[href*='/artist/']").each((_, el) => {
-      const a = $(el).text().trim();
-      if (a && !authors.includes(a)) authors.push(a);
-    });
+    $("div.tag-container:contains('Artists:') a, a[href*='/artist/']").each(
+      (_, el) => {
+        const a = $(el).text().trim();
+        if (a && !authors.includes(a)) authors.push(a);
+      }
+    );
 
     let description = "";
     $("div.tag-container:contains('Pages:')").each((_, el) => {
@@ -206,7 +271,8 @@ async function fetchMangaInfo(mangaId) {
       id: cleanId,
       title,
       image,
-      description: description.trim() || `Tags: ${genres.slice(0, 8).join(", ")}`,
+      description:
+        description.trim() || `Tags: ${genres.slice(0, 8).join(", ")}`,
       authors,
       genres,
       status: "Completed",
@@ -227,15 +293,36 @@ async function fetchMangaInfo(mangaId) {
 }
 
 async function fetchChapters(mangaId) {
-  const cleanId = String(mangaId).trim().replace(/^\/+|\/+$/g, "");
-  return [
-    {
-      id: cleanId,
-      title: "Chapter 1",
-      chapterNumber: 1,
-      releaseDate: null,
-    },
-  ];
+  try {
+    const cleanId = String(mangaId).trim().replace(/^\/+|\/+$/g, "");
+    const chapters = [
+      {
+        id: cleanId,
+        number: 1,
+        title: "Chapter 1",
+      },
+    ];
+
+    return {
+      TotalPages: 1,
+      totalPages: 1,
+      total: 1,
+      totalItems: 1,
+      Chapters: chapters,
+      chapters: chapters,
+      hasNextPage: false,
+    };
+  } catch (err) {
+    return {
+      TotalPages: 0,
+      totalPages: 0,
+      total: 0,
+      totalItems: 0,
+      Chapters: [],
+      chapters: [],
+      hasNextPage: false,
+    };
+  }
 }
 
 async function fetchChapterPages(chapterId) {
@@ -251,7 +338,9 @@ async function fetchChapterPages(chapterId) {
         const readerData = JSON.parse(pagesMatch[1]);
         const baseUri = readerData.baseUriImg || "";
         const pagesList = [];
-        const total = readerData.lastPage || (readerData.pages ? Object.keys(readerData.pages).length : 0);
+        const total =
+          readerData.lastPage ||
+          (readerData.pages ? Object.keys(readerData.pages).length : 0);
 
         for (let i = 1; i <= total; i++) {
           const p = readerData.pages && readerData.pages[i];
@@ -266,10 +355,15 @@ async function fetchChapterPages(chapterId) {
 
     const $ = cheerio.load(html);
     const pages = [];
-    $(".single-thumb img, .gallery-reader-img-wrapper img, .reader-image img").each((i, el) => {
+    $(
+      ".single-thumb img, .gallery-reader-img-wrapper img, .reader-image img"
+    ).each((i, el) => {
       let src = $(el).attr("data-src") || $(el).attr("src") || "";
       if (src && !src.startsWith("data:")) {
-        src = src.replace("t.jpg", ".jpg").replace("t.webp", ".webp").replace("t.png", ".png");
+        src = src
+          .replace("t.jpg", ".jpg")
+          .replace("t.webp", ".webp")
+          .replace("t.png", ".png");
         if (src.startsWith("//")) src = "https:" + src;
         pages.push({
           page: i + 1,
@@ -286,7 +380,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentaiforce",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules: [
     {
@@ -297,6 +391,29 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["hentaiforce.net", "hentaiforce.com", "hentaiforce.org"],
+      headers: {
+        Referer: "https://hentaiforce.net/",
+        Origin: "https://hentaiforce.net",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (
+      url &&
+      (url.includes("hentaiforce.net") ||
+        url.includes("hentaiforce.com") ||
+        url.includes("hentaiforce.org"))
+    ) {
+      return {
+        Referer: "https://hentaiforce.net/",
+        Origin: "https://hentaiforce.net",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["hentaiforce.net", "hentaiforce.com", "hentaiforce.org"],
   latestManga,
   searchManga,

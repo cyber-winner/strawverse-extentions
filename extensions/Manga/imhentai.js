@@ -54,7 +54,12 @@ function parseGalleryItems($) {
       img.attr("data-original") ||
       null;
 
-    if (image && (image.startsWith("data:") || image.includes("load_error") || image.includes("blank.gif"))) {
+    if (
+      image &&
+      (image.startsWith("data:") ||
+        image.includes("load_error") ||
+        image.includes("blank.gif"))
+    ) {
       image = img.attr("data-src") || img.attr("data-original") || null;
     }
     if (image && image.startsWith("//")) {
@@ -62,7 +67,11 @@ function parseGalleryItems($) {
     }
 
     let title =
-      $(el).find(".caption h2 a, .gallery_title, h2, h3, .caption").first().text().trim() ||
+      $(el)
+        .find(".caption h2 a, .gallery_title, h2, h3, .caption")
+        .first()
+        .text()
+        .trim() ||
       a.attr("title") ||
       img.attr("alt") ||
       "";
@@ -82,7 +91,7 @@ function parseGalleryItems($) {
 
 function parsePagination($, resultsLength, currentPage) {
   let totalPages = null;
-  $("ul.pagination li.page-item a.page-link").each((_, el) => {
+  $("ul.pagination li.page-item a.page-link, .pagination a").each((_, el) => {
     const text = $(el).text().trim();
     const num = parseInt(text, 10);
     if (!isNaN(num) && (totalPages === null || num > totalPages)) {
@@ -90,12 +99,15 @@ function parsePagination($, resultsLength, currentPage) {
     }
   });
 
-  const nextLink = $("ul.pagination a.page-link:contains('Next')").attr("href");
+  const nextLink = $(
+    "ul.pagination a.page-link:contains('Next'), .pagination a:contains('Next')"
+  ).attr("href");
   const hasNextPage =
-    Boolean(nextLink) || (totalPages ? currentPage < totalPages : resultsLength > 0);
+    Boolean(nextLink) ||
+    (totalPages ? currentPage < totalPages : resultsLength > 0);
 
   return {
-    totalPages,
+    totalPages: totalPages || (hasNextPage ? currentPage + 1 : currentPage),
     hasNextPage,
   };
 }
@@ -104,44 +116,69 @@ async function latestManga(page = 1) {
   try {
     const pageNum = parseInt(page, 10) || 1;
     const url =
-      pageNum > 1
-        ? `${baseUrl}/?page=${pageNum}`
-        : `${baseUrl}/home/`;
+      pageNum > 1 ? `${baseUrl}/?page=${pageNum}` : `${baseUrl}/`;
 
     const html = await getHtml(url);
     const $ = cheerio.load(html);
     const results = parseGalleryItems($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, pageNum);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages: totalPages || (results.length > 0 ? pageNum + 1 : pageNum),
       hasNextPage,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
 async function searchManga(query, page = 1) {
   try {
     const pageNum = parseInt(page, 10) || 1;
-    const url = `${baseUrl}/search/?key=${encodeURIComponent(query)}&page=${pageNum}`;
+    if (!query || !query.trim()) {
+      return latestManga(pageNum);
+    }
+    const url = `${baseUrl}/search/?key=${encodeURIComponent(
+      query.trim()
+    )}&page=${pageNum}`;
 
     const html = await getHtml(url);
     const $ = cheerio.load(html);
     const results = parseGalleryItems($);
-    const { totalPages, hasNextPage } = parsePagination($, results.length, pageNum);
+    const { totalPages, hasNextPage } = parsePagination(
+      $,
+      results.length,
+      pageNum
+    );
 
     return {
-      results,
+      current_page: pageNum,
       page: pageNum,
       totalPages: totalPages || (results.length > 0 ? pageNum + 1 : pageNum),
       hasNextPage,
+      results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
@@ -176,12 +213,12 @@ async function fetchMangaInfo(mangaId) {
     });
 
     const authors = [];
-    $("ul.galleries_info a[href*='/artist/'], ul.galleries_info a[href*='/group/']").each(
-      (_, el) => {
-        const a = $(el).text().replace(/\([0-9,.]+\)/, "").trim();
-        if (a && !authors.includes(a)) authors.push(a);
-      }
-    );
+    $(
+      "ul.galleries_info a[href*='/artist/'], ul.galleries_info a[href*='/group/']"
+    ).each((_, el) => {
+      const a = $(el).text().replace(/\([0-9,.]+\)/, "").trim();
+      if (a && !authors.includes(a)) authors.push(a);
+    });
 
     let totalPages = 0;
     $("ul.galleries_info li").each((_, el) => {
@@ -198,7 +235,9 @@ async function fetchMangaInfo(mangaId) {
       id: cleanId,
       title: title || `Gallery #${cleanId}`,
       image,
-      description: `Pages: ${totalPages || "Unknown"} | Tags: ${genres.slice(0, 10).join(", ")}`,
+      description: `Pages: ${totalPages || "Unknown"} | Tags: ${genres
+        .slice(0, 10)
+        .join(", ")}`,
       authors,
       genres,
       status: "Completed",
@@ -219,15 +258,36 @@ async function fetchMangaInfo(mangaId) {
 }
 
 async function fetchChapters(mangaId) {
-  const cleanId = String(mangaId).replace(/[^0-9]/g, "");
-  return [
-    {
-      id: cleanId,
-      title: "Chapter 1",
-      chapterNumber: 1,
-      releaseDate: null,
-    },
-  ];
+  try {
+    const cleanId = String(mangaId).replace(/[^0-9]/g, "");
+    const chapters = [
+      {
+        id: cleanId,
+        number: 1,
+        title: "Chapter 1",
+      },
+    ];
+
+    return {
+      TotalPages: 1,
+      totalPages: 1,
+      total: 1,
+      totalItems: 1,
+      Chapters: chapters,
+      chapters: chapters,
+      hasNextPage: false,
+    };
+  } catch (err) {
+    return {
+      TotalPages: 0,
+      totalPages: 0,
+      total: 0,
+      totalItems: 0,
+      Chapters: [],
+      chapters: [],
+      hasNextPage: false,
+    };
+  }
 }
 
 async function fetchChapterPages(chapterId) {
@@ -307,7 +367,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "imhentai",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules: [
     {
@@ -318,6 +378,24 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["imhentai.xxx"],
+      headers: {
+        Referer: "https://imhentai.xxx/",
+        Origin: "https://imhentai.xxx",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (url && url.includes("imhentai.xxx")) {
+      return {
+        Referer: "https://imhentai.xxx/",
+        Origin: "https://imhentai.xxx",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["imhentai.xxx"],
   latestManga,
   searchManga,
