@@ -320,7 +320,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "simplyhentai",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules: [
     {

@@ -396,7 +396,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentaiforce",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules: [
     {
