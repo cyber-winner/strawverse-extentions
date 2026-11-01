@@ -81,12 +81,6 @@
       "disabled": false
     },
     {
-      "name": "hentairead",
-      "version": "1.0.1",
-      "MinAppVersion": "11.0.0",
-      "disabled": false
-    },
-    {
       "name": "simplyhentai",
       "version": "1.0.1",
       "MinAppVersion": "11.0.0",

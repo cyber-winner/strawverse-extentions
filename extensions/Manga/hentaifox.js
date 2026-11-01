@@ -54,11 +54,22 @@ function parseThumbs($) {
       img.attr("data-original") ||
       null;
 
-    if (image && (image.startsWith("data:") || image.includes("load_error"))) {
-      image = img.attr("data-src") || null;
+    if (
+      image &&
+      (image.startsWith("data:") ||
+        image.includes("load_error") ||
+        image.includes("blank.gif"))
+    ) {
+      image =
+        img.attr("data-src") ||
+        img.attr("data-original") ||
+        img.attr("data-lazy-src") ||
+        null;
     }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
+    } else if (image && image.startsWith("/")) {
+      image = baseUrl + image;
     }
 
     let title =
@@ -192,11 +203,22 @@ async function fetchMangaInfo(mangaId) {
       coverImg.attr("src") ||
       coverImg.attr("data-original") ||
       null;
-    if (image && (image.startsWith("data:") || image.includes("load_error"))) {
-      image = coverImg.attr("data-src") || null;
+    if (
+      image &&
+      (image.startsWith("data:") ||
+        image.includes("load_error") ||
+        image.includes("blank.gif"))
+    ) {
+      image =
+        coverImg.attr("data-src") ||
+        coverImg.attr("data-original") ||
+        coverImg.attr("data-lazy-src") ||
+        null;
     }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
+    } else if (image && image.startsWith("/")) {
+      image = baseUrl + image;
     }
 
     const genres = [];

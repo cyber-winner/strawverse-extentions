@@ -63,6 +63,17 @@ async function fetchGg() {
   return cachedGg;
 }
 
+function buildThumbnailUrl(hash, gg) {
+  if (!hash || !gg) return "";
+  const r = /\/[0-9a-f]{61}([0-9a-f]{2})([0-9a-f])/;
+  const initialUrl = `https://a.${domain2}/webpbigtn/${hash}.webp`;
+  const m = r.exec(initialUrl);
+  const g = m ? parseInt(m[2] + m[1], 16) : 0;
+  const sub = String.fromCharCode(97 + gg.m(g)) + "tn";
+  const realPath = hash.replace(/^.*(..)(.)$/, "$2/$1/" + hash);
+  return `https://${sub}.${domain2}/webpbigtn/${realPath}.webp`;
+}
+
 function buildImageUrl(hash, gg) {
   if (!hash || !gg) return "";
   const fullPath = `${gg.b}${gg.s(hash)}/${hash}`;
@@ -142,7 +153,9 @@ async function latestManga(page = 1) {
         const info = await getGalleryInfo(id);
         if (info) {
           const firstFile = info.files && info.files[0];
-          const image = firstFile ? buildImageUrl(firstFile.hash, gg) : null;
+          const image = firstFile
+            ? buildThumbnailUrl(firstFile.hash, gg)
+            : null;
           return {
             id: String(id),
             title: info.title || info.japanese_title || `Gallery #${id}`,
@@ -208,7 +221,9 @@ async function searchManga(query, page = 1) {
         const info = await getGalleryInfo(id);
         if (info) {
           const firstFile = info.files && info.files[0];
-          const image = firstFile ? buildImageUrl(firstFile.hash, gg) : null;
+          const image = firstFile
+            ? buildThumbnailUrl(firstFile.hash, gg)
+            : null;
           return {
             id: String(id),
             title: info.title || info.japanese_title || `Gallery #${id}`,
@@ -264,7 +279,7 @@ async function fetchMangaInfo(mangaId) {
 
     const gg = await fetchGg();
     const firstFile = info.files && info.files[0];
-    const image = firstFile ? buildImageUrl(firstFile.hash, gg) : null;
+    const image = firstFile ? buildThumbnailUrl(firstFile.hash, gg) : null;
 
     const genres = (info.tags || []).map((t) => t.tag || t).filter(Boolean);
     const authors = (info.artists || []).map((a) => a.artist || a).filter(Boolean);
@@ -351,7 +366,15 @@ module.exports = {
   baseUrl,
   headerRules: [
     {
-      match: ["hitomi.la", "gold-usergeneratedcontent.net"],
+      match: [
+        "hitomi.la",
+        "gold-usergeneratedcontent.net",
+        "atn.gold-usergeneratedcontent.net",
+        "btn.gold-usergeneratedcontent.net",
+        "ltn.gold-usergeneratedcontent.net",
+        "w1.gold-usergeneratedcontent.net",
+        "w2.gold-usergeneratedcontent.net",
+      ],
       headers: {
         Referer: "https://hitomi.la/",
         Origin: "https://hitomi.la",
@@ -360,7 +383,15 @@ module.exports = {
   ],
   subrequestHeaders: [
     {
-      match: ["hitomi.la", "gold-usergeneratedcontent.net"],
+      match: [
+        "hitomi.la",
+        "gold-usergeneratedcontent.net",
+        "atn.gold-usergeneratedcontent.net",
+        "btn.gold-usergeneratedcontent.net",
+        "ltn.gold-usergeneratedcontent.net",
+        "w1.gold-usergeneratedcontent.net",
+        "w2.gold-usergeneratedcontent.net",
+      ],
       headers: {
         Referer: "https://hitomi.la/",
         Origin: "https://hitomi.la",
@@ -380,7 +411,13 @@ module.exports = {
     }
     return {};
   },
-  bypassDomains: ["hitomi.la", "gold-usergeneratedcontent.net"],
+  bypassDomains: [
+    "hitomi.la",
+    "gold-usergeneratedcontent.net",
+    "atn.gold-usergeneratedcontent.net",
+    "btn.gold-usergeneratedcontent.net",
+    "ltn.gold-usergeneratedcontent.net",
+  ],
   latestManga,
   searchManga,
   fetchMangaInfo,

@@ -73,10 +73,23 @@ function parseDomGalleries($) {
     const img = $(el).find("img").first();
     let image =
       img.attr("data-src") ||
-      img.attr("src") ||
       img.attr("data-original") ||
+      img.attr("data-lazy-src") ||
+      img.attr("src") ||
       null;
 
+    if (
+      image &&
+      (image.startsWith("data:") ||
+        image.includes("load_error") ||
+        image.includes("blank.gif"))
+    ) {
+      image =
+        img.attr("data-src") ||
+        img.attr("data-original") ||
+        img.attr("data-lazy-src") ||
+        null;
+    }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
     }
@@ -238,9 +251,18 @@ async function fetchMangaInfo(mangaId) {
         `Gallery #${cleanId}`;
 
       const coverPath =
-        svelteData.cover?.path ||
-        (svelteData.thumbnail ? svelteData.thumbnail.path : null);
-      const image = coverPath ? `https://t1.nhentai.net/${coverPath}` : null;
+        (typeof svelteData.cover === "string"
+          ? svelteData.cover
+          : svelteData.cover?.path) ||
+        (typeof svelteData.thumbnail === "string"
+          ? svelteData.thumbnail
+          : svelteData.thumbnail?.path) ||
+        null;
+      const image = coverPath
+        ? coverPath.startsWith("http")
+          ? coverPath
+          : `https://t1.nhentai.net/${coverPath.replace(/^\/+/, "")}`
+        : null;
 
       const tags = Array.isArray(svelteData.tags) ? svelteData.tags : [];
       const genres = tags
@@ -385,7 +407,17 @@ module.exports = {
   baseUrl,
   headerRules: [
     {
-      match: ["nhentai.net"],
+      match: [
+        "nhentai.net",
+        "t.nhentai.net",
+        "t1.nhentai.net",
+        "t2.nhentai.net",
+        "t3.nhentai.net",
+        "i.nhentai.net",
+        "i1.nhentai.net",
+        "i2.nhentai.net",
+        "i3.nhentai.net",
+      ],
       headers: {
         Referer: "https://nhentai.net/",
         Origin: "https://nhentai.net",
@@ -394,7 +426,17 @@ module.exports = {
   ],
   subrequestHeaders: [
     {
-      match: ["nhentai.net"],
+      match: [
+        "nhentai.net",
+        "t.nhentai.net",
+        "t1.nhentai.net",
+        "t2.nhentai.net",
+        "t3.nhentai.net",
+        "i.nhentai.net",
+        "i1.nhentai.net",
+        "i2.nhentai.net",
+        "i3.nhentai.net",
+      ],
       headers: {
         Referer: "https://nhentai.net/",
         Origin: "https://nhentai.net",
@@ -410,7 +452,12 @@ module.exports = {
     }
     return {};
   },
-  bypassDomains: ["nhentai.net"],
+  bypassDomains: [
+    "nhentai.net",
+    "t1.nhentai.net",
+    "t2.nhentai.net",
+    "t3.nhentai.net",
+  ],
   latestManga,
   searchManga,
   fetchMangaInfo,

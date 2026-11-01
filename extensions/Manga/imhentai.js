@@ -47,23 +47,34 @@ function parseGalleryItems($) {
     if (!match) return;
     const id = match[1];
 
-    const img = $(el).find("img").first();
+    const img = $(el)
+      .find(".inner_thumb img, a[href*='/gallery/'] img, img.lazy")
+      .first();
     let image =
       img.attr("data-src") ||
-      img.attr("src") ||
       img.attr("data-original") ||
+      img.attr("data-lazy-src") ||
+      img.attr("src") ||
       null;
 
     if (
       image &&
       (image.startsWith("data:") ||
         image.includes("load_error") ||
-        image.includes("blank.gif"))
+        image.includes("blank.gif") ||
+        image.includes("uk_usa") ||
+        image.includes("flag"))
     ) {
-      image = img.attr("data-src") || img.attr("data-original") || null;
+      image =
+        img.attr("data-src") ||
+        img.attr("data-original") ||
+        img.attr("data-lazy-src") ||
+        null;
     }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
+    } else if (image && image.startsWith("/")) {
+      image = baseUrl + image;
     }
 
     let title =
@@ -196,14 +207,31 @@ async function fetchMangaInfo(mangaId) {
         .trim();
     title = title.replace(/\s+/g, " ");
 
-    const coverImg = $(".cover img, .left_cover img").first();
+    const coverImg = $(
+      ".left_cover img, .cover img, .gallery_first img"
+    ).first();
     let image =
       coverImg.attr("data-src") ||
-      coverImg.attr("src") ||
       coverImg.attr("data-original") ||
+      coverImg.attr("data-lazy-src") ||
+      coverImg.attr("src") ||
       null;
+    if (
+      image &&
+      (image.startsWith("data:") ||
+        image.includes("load_error") ||
+        image.includes("blank.gif"))
+    ) {
+      image =
+        coverImg.attr("data-src") ||
+        coverImg.attr("data-original") ||
+        coverImg.attr("data-lazy-src") ||
+        null;
+    }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
+    } else if (image && image.startsWith("/")) {
+      image = baseUrl + image;
     }
 
     const genres = [];
@@ -371,7 +399,7 @@ module.exports = {
   baseUrl,
   headerRules: [
     {
-      match: ["imhentai.xxx"],
+      match: ["imhentai.xxx", "m1.imhentai.xxx", "m2.imhentai.xxx", "m3.imhentai.xxx", "m4.imhentai.xxx", "m5.imhentai.xxx", "m6.imhentai.xxx", "m7.imhentai.xxx", "m8.imhentai.xxx", "m9.imhentai.xxx", "m10.imhentai.xxx", "m11.imhentai.xxx"],
       headers: {
         Referer: "https://imhentai.xxx/",
         Origin: "https://imhentai.xxx",
@@ -380,7 +408,7 @@ module.exports = {
   ],
   subrequestHeaders: [
     {
-      match: ["imhentai.xxx"],
+      match: ["imhentai.xxx", "m1.imhentai.xxx", "m2.imhentai.xxx", "m3.imhentai.xxx", "m4.imhentai.xxx", "m5.imhentai.xxx", "m6.imhentai.xxx", "m7.imhentai.xxx", "m8.imhentai.xxx", "m9.imhentai.xxx", "m10.imhentai.xxx", "m11.imhentai.xxx"],
       headers: {
         Referer: "https://imhentai.xxx/",
         Origin: "https://imhentai.xxx",

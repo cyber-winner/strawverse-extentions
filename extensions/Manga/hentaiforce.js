@@ -16,8 +16,12 @@
 
 const cheerio = require("cheerio");
 
-const baseUrl = "https://hentaiforce.net";
-const fallbackBases = ["https://hentaiforce.com", "https://hentaiforce.org"];
+const baseUrl = "https://hentaiforce.me";
+const fallbackBases = [
+  "https://hentaiforce.net",
+  "https://hentaiforce.com",
+  "https://hentaiforce.org",
+];
 
 const defaultHeaders = {
   "User-Agent":
@@ -25,13 +29,15 @@ const defaultHeaders = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
-  Referer: "https://hentaiforce.net/",
+  Referer: "https://hentaiforce.me/",
 };
 
 if (typeof global.setDynamicReferer === "function") {
-  global.setDynamicReferer("hentaiforce.net", "https://hentaiforce.net/");
-  global.setDynamicReferer("hentaiforce.com", "https://hentaiforce.com/");
-  global.setDynamicReferer("hentaiforce.org", "https://hentaiforce.org/");
+  global.setDynamicReferer("hentaiforce.me", "https://hentaiforce.me/");
+  global.setDynamicReferer("m1.hentaiforce.me", "https://hentaiforce.me/");
+  global.setDynamicReferer("hentaiforce.net", "https://hentaiforce.me/");
+  global.setDynamicReferer("hentaiforce.com", "https://hentaiforce.me/");
+  global.setDynamicReferer("hentaiforce.org", "https://hentaiforce.me/");
 }
 
 async function getHtmlWithFallback(path) {
@@ -79,11 +85,21 @@ function parseItems($) {
     let image =
       img.attr("data-src") ||
       img.attr("data-lazy-src") ||
+      img.attr("data-original") ||
       img.attr("src") ||
       null;
 
+    if (image && (image.startsWith("data:") || image.includes("load_error") || image.includes("blank.gif"))) {
+      image =
+        img.attr("data-src") ||
+        img.attr("data-lazy-src") ||
+        img.attr("data-original") ||
+        null;
+    }
     if (image && image.startsWith("//")) {
       image = "https:" + image;
+    } else if (image && image.startsWith("/")) {
+      image = "https://m1.hentaiforce.me" + image;
     }
 
     let title =
@@ -384,37 +400,50 @@ module.exports = {
   baseUrl,
   headerRules: [
     {
-      match: ["hentaiforce.net", "hentaiforce.com", "hentaiforce.org"],
+      match: [
+        "hentaiforce.me",
+        "m1.hentaiforce.me",
+        "hentaiforce.net",
+        "hentaiforce.com",
+        "hentaiforce.org",
+      ],
       headers: {
-        Referer: "https://hentaiforce.net/",
-        Origin: "https://hentaiforce.net",
+        Referer: "https://hentaiforce.me/",
+        Origin: "https://hentaiforce.me",
       },
     },
   ],
   subrequestHeaders: [
     {
-      match: ["hentaiforce.net", "hentaiforce.com", "hentaiforce.org"],
+      match: [
+        "hentaiforce.me",
+        "m1.hentaiforce.me",
+        "hentaiforce.net",
+        "hentaiforce.com",
+        "hentaiforce.org",
+      ],
       headers: {
-        Referer: "https://hentaiforce.net/",
-        Origin: "https://hentaiforce.net",
+        Referer: "https://hentaiforce.me/",
+        Origin: "https://hentaiforce.me",
       },
     },
   ],
   getHeaders(url) {
-    if (
-      url &&
-      (url.includes("hentaiforce.net") ||
-        url.includes("hentaiforce.com") ||
-        url.includes("hentaiforce.org"))
-    ) {
+    if (url && (url.includes("hentaiforce") || url.includes("m1.hentaiforce"))) {
       return {
-        Referer: "https://hentaiforce.net/",
-        Origin: "https://hentaiforce.net",
+        Referer: "https://hentaiforce.me/",
+        Origin: "https://hentaiforce.me",
       };
     }
     return {};
   },
-  bypassDomains: ["hentaiforce.net", "hentaiforce.com", "hentaiforce.org"],
+  bypassDomains: [
+    "hentaiforce.me",
+    "m1.hentaiforce.me",
+    "hentaiforce.net",
+    "hentaiforce.com",
+    "hentaiforce.org",
+  ],
   latestManga,
   searchManga,
   fetchMangaInfo,

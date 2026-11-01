@@ -379,6 +379,24 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["nhentai.xxx", "nhentaimg.com"],
+      headers: {
+        Referer: "https://nhentai.xxx/",
+        Origin: "https://nhentai.xxx",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (url && (url.includes("nhentai.xxx") || url.includes("nhentaimg.com"))) {
+      return {
+        Referer: "https://nhentai.xxx/",
+        Origin: "https://nhentai.xxx",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["nhentai.xxx"],
   latestManga,
   searchManga,

@@ -321,13 +321,31 @@ module.exports = {
   baseUrl,
   headerRules: [
     {
-      match: ["asmhentai.com"],
+      match: ["asmhentai.com", "images.asmhentai.com"],
       headers: {
         Referer: "https://asmhentai.com/",
         Origin: "https://asmhentai.com",
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["asmhentai.com", "images.asmhentai.com"],
+      headers: {
+        Referer: "https://asmhentai.com/",
+        Origin: "https://asmhentai.com",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (url && url.includes("asmhentai.com")) {
+      return {
+        Referer: "https://asmhentai.com/",
+        Origin: "https://asmhentai.com",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["asmhentai.com"],
   latestManga,
   searchManga,

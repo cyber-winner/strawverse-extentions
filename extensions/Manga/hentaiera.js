@@ -353,6 +353,24 @@ module.exports = {
       },
     },
   ],
+  subrequestHeaders: [
+    {
+      match: ["hentaiera.com"],
+      headers: {
+        Referer: "https://hentaiera.com/",
+        Origin: "https://hentaiera.com",
+      },
+    },
+  ],
+  getHeaders(url) {
+    if (url && url.includes("hentaiera.com")) {
+      return {
+        Referer: "https://hentaiera.com/",
+        Origin: "https://hentaiera.com",
+      };
+    }
+    return {};
+  },
   bypassDomains: ["hentaiera.com"],
   latestManga,
   searchManga,

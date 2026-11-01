@@ -41,30 +41,54 @@ async function getHtml(url) {
 function parseCards($) {
   const results = [];
   $("article").each((_, el) => {
-    const a =
-      $(el).find(".cover-slot a, a:has(.cover-slot), .info a, header a").first();
-    const href = a.attr("href") || $(el).find("a").first().attr("href") || "";
+    const a = $(el)
+      .find("a.content-link, a[data-cover-trigger], a:has(.cover-slot), .cover-slot a, .info a")
+      .first();
+    let href = a.attr("href") || "";
+    if (!href || href.startsWith("/series/")) {
+      const allA = $(el).find("a").toArray();
+      for (const item of allA) {
+        const h = $(item).attr("href") || "";
+        if (h && !h.startsWith("/series/") && !h.startsWith("/topics/") && !h.startsWith("/tag/")) {
+          href = h;
+          break;
+        }
+      }
+    }
+
     const cleanId = href.replace(/^https?:\/\/[^\/]+\//, "").replace(/^\/+|\/+$/g, "");
 
     if (
       !cleanId ||
       cleanId === "series" ||
+      cleanId.startsWith("series/") ||
       cleanId === "manga" ||
       cleanId.startsWith("tag/") ||
-      cleanId.startsWith("artist/")
+      cleanId.startsWith("artist/") ||
+      cleanId.startsWith("topics/")
     ) {
       return;
     }
 
-    const img =
-      $(el).find("img[src*='sh-cdn']").first().attr("src") ||
-      $(el).find("img").first().attr("src") ||
+    const imgEl = $(el).find(".cover-slot img, img[src*='sh-cdn'], img").first();
+    let img =
+      imgEl.attr("data-src") ||
+      imgEl.attr("src") ||
+      imgEl.attr("data-lazy-src") ||
       null;
 
+    if (img && (img.startsWith("data:") || img.includes("load_error") || img.includes("blank.gif"))) {
+      img = imgEl.attr("data-src") || imgEl.attr("data-original") || null;
+    }
+    if (img && img.startsWith("//")) {
+      img = "https:" + img;
+    }
+
     let title =
+      imgEl.attr("alt") ||
       $(el).find(".title, h3, h4").first().text().trim() ||
       a.attr("title") ||
-      cleanId;
+      cleanId.split("/").pop().replace(/-/g, " ");
 
     title = title.replace(/\s+/g, " ").trim();
 
@@ -79,13 +103,53 @@ function parseCards($) {
   return results;
 }
 
+function parseRscFallback(html) {
+  const results = [];
+  if (!html || typeof html !== "string") return results;
+  const unescaped = html.replace(/\\"/g, '"').replace(/\\\//g, "/");
+  const rscRegex =
+    /href=["'](\/[^"' >]+)["'][^>]*?src=["'](https:\/\/images\.sh-cdn\.com\/[^"' >]+)["'](?:[^>]*?alt=["']([^"' >]*)["'])?/g;
+  let m;
+  while ((m = rscRegex.exec(unescaped)) !== null) {
+    const href = m[1];
+    const img = m[2];
+    const alt = m[3] || "";
+    const cleanId = href
+      .replace(/^https?:\/\/[^\/]+\//, "")
+      .replace(/^\/+|\/+$/g, "");
+    if (
+      !cleanId ||
+      cleanId === "series" ||
+      cleanId.startsWith("series/") ||
+      cleanId === "manga" ||
+      cleanId.startsWith("tag/") ||
+      cleanId.startsWith("artist/") ||
+      cleanId.startsWith("topics/") ||
+      cleanId.includes("originals-banner")
+    ) {
+      continue;
+    }
+    if (!results.some((r) => r.id === cleanId)) {
+      results.push({
+        id: cleanId,
+        title: alt || cleanId.split("/").pop().replace(/-/g, " "),
+        image: img,
+      });
+    }
+  }
+  return results;
+}
+
 async function latestManga(page = 1) {
   try {
     const pageNum = parseInt(page, 10) || 1;
     const url = `${baseUrl}/manga?page=${pageNum}`;
     const html = await getHtml(url);
     const $ = cheerio.load(html);
-    const results = parseCards($);
+    let results = parseCards($);
+    if (results.length === 0) {
+      results = parseRscFallback(html);
+    }
 
     return {
       current_page: pageNum,
@@ -116,7 +180,10 @@ async function searchManga(query, page = 1) {
     )}&page=${pageNum}`;
     const html = await getHtml(url);
     const $ = cheerio.load(html);
-    const results = parseCards($);
+    let results = parseCards($);
+    if (results.length === 0) {
+      results = parseRscFallback(html);
+    }
 
     return {
       current_page: pageNum,

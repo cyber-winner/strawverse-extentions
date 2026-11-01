@@ -52,12 +52,25 @@ async function getInertiaData(url) {
   return null;
 }
 
+function formatCoverUrl(url) {
+  if (!url) return null;
+  let str = String(url).trim();
+  if (str.startsWith("//")) str = "https:" + str;
+  if (str.includes("hentaicdn.com/hentai/cover/")) {
+    str = str.replace(
+      /\/hentai\/cover\/([^\/]+)\.(?:jpg|png|jpeg|webp)/i,
+      "/hentai/cover/thumbs/$1-200.webp"
+    );
+  }
+  return str;
+}
+
 function normalizeBook(item) {
   if (!item) return null;
   const rawUrl = item.url || "";
   const id = rawUrl.replace(/^\//, "") || String(item.id);
   const title = item.title || `Book #${item.id}`;
-  const image = item.cover || null;
+  const image = formatCoverUrl(item.cover);
 
   return {
     id,
@@ -173,7 +186,9 @@ async function fetchMangaInfo(mangaId) {
 
     const book = inertia.props.book;
     const title = book.title || `Book #${book.id}`;
-    const image = book.cover || null;
+    const image = formatCoverUrl(
+      book.cover || (book.images && book.images[0]) || null
+    );
     const description = book.description || "";
     const tags = Array.isArray(book.tags) ? book.tags : [];
     const genres = tags.map((t) => t.name).filter(Boolean);
