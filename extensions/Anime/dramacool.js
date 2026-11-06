@@ -13,7 +13,7 @@ const baseUrl = "https://dramacool9.rest";
 const VIDBASIC_KEY = "94588293375053432799222445521289";
 const VIDBASIC_IV = "5259228356829423";
 
-// Declarative header rules for DramaCool, Vidbasic player and stream CDNs
+// Declarative header rules for DramaCool, Vidbasic player, image CDNs and stream CDNs
 const headerRules = [
   {
     match: [
@@ -26,6 +26,11 @@ const headerRules = [
       "streamwish",
       "hglink.to",
       "vidmoly",
+      "myasiantv",
+      "drama123",
+      "dramizo",
+      "kissasian",
+      "vikiplatform",
     ],
     headers: {
       Referer: "https://dramacool9.rest/",
@@ -75,6 +80,9 @@ const bypassDomains = [
   "streamtape.com",
   "mixdrop.top",
   "mixdrop.ps",
+  "myasiantv.rest",
+  "drama123.tv",
+  "dramizo.com",
 ];
 
 const _global =
@@ -148,6 +156,18 @@ function slugify(text) {
     .replace(/[^\w\s-]/g, "")
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Filter out hotlink-blocked image CDNs (e.g. asiaflix.net returns 403 on direct requests)
+ * and prioritize TMDB or unblocked mirrors.
+ */
+function pickBestImage(image, coverImage) {
+  const isBad = (u) => !u || typeof u !== "string" || u.includes("asiaflix.net");
+  if (coverImage && coverImage.includes("tmdb.org")) return coverImage;
+  if (image && !isBad(image)) return image;
+  if (coverImage && !isBad(coverImage)) return coverImage;
+  return image || coverImage || null;
 }
 
 /**
@@ -298,10 +318,11 @@ async function SearchAnime(query, page = 1) {
                 if (item?.u?.includes("detail") && item?.b?.name) {
                   const b = item.b;
                   const itemSlug = b.slug || candidateSlug;
+                  const bestImg = pickBestImage(b.image, b.coverImage);
                   results.push({
                     id: itemSlug,
                     title: b.name,
-                    image: b.image || b.coverImage || null,
+                    image: bestImg,
                     type: "Drama",
                     subDub: "Sub",
                     releaseYear: b.releaseYear ? String(b.releaseYear) : "",
@@ -339,10 +360,11 @@ async function SearchAnime(query, page = 1) {
               if (!slug || seenSlugs.has(slug)) continue;
               seenSlugs.add(slug);
 
+              const bestImg = pickBestImage(d.image, d.coverImage);
               results.push({
                 id: slug,
                 title: d.name || d.normalizedName || slug,
-                image: d.image || d.coverImage || null,
+                image: bestImg,
                 type: "Drama",
                 subDub: "Sub",
                 releaseYear: d.releaseYear ? String(d.releaseYear) : "",
@@ -444,8 +466,10 @@ async function AnimeInfo(id) {
         if (entry?.u?.includes("detail") && entry?.b) {
           const b = entry.b;
           dramaInfo.title = String(b.name || b.originalName || slug);
-          dramaInfo.image = b.image || b.coverImage || null;
-          dramaInfo.image_url = dramaInfo.image;
+          
+          const bestImg = pickBestImage(b.image, b.coverImage);
+          dramaInfo.image = bestImg;
+          dramaInfo.image_url = bestImg;
           dramaInfo.description = String(b.description || b.synopsis || "");
 
           // CRITICAL FIX: b.genres is [{ name, url }], extract clean strings so React doesn't crash
@@ -746,10 +770,11 @@ async function fetchRecentEpisodes(page = 1) {
             if (recentsSection && Array.isArray(recentsSection.data)) {
               for (const d of recentsSection.data) {
                 if (!d.slug && !d.name) continue;
+                const bestImg = pickBestImage(d.image, d.coverImage);
                 results.push({
                   id: d.slug,
                   title: d.name || d.normalizedName || d.slug,
-                  image: d.image || d.coverImage || null,
+                  image: bestImg,
                   type: "Drama",
                   subDub: "Sub",
                   releaseYear: d.releaseYear ? String(d.releaseYear) : "",
@@ -769,10 +794,11 @@ async function fetchRecentEpisodes(page = 1) {
             totalPages = entry.b.totalPages || 100;
             for (const d of entry.b.body) {
               if (!d.slug && !d.name) continue;
+              const bestImg = pickBestImage(d.image, d.coverImage);
               results.push({
                 id: d.slug,
                 title: d.name || d.normalizedName || d.slug,
-                image: d.image || d.coverImage || null,
+                image: bestImg,
                 type: "Drama",
                 subDub: "Sub",
                 releaseYear: d.releaseYear ? String(d.releaseYear) : "",
@@ -802,7 +828,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules,
   subrequestHeaders,
