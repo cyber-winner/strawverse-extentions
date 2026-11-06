@@ -199,6 +199,77 @@ function pickBestImage(image, coverImage) {
   return image || coverImage || null;
 }
 
+const STOP_WORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for", "with",
+  "by", "from", "is", "it", "as", "be", "this", "that"
+]);
+
+function editDistance(a, b) {
+  if (a === b) return 0;
+  if (!a) return b.length;
+  if (!b) return a.length;
+  if (Math.abs(a.length - b.length) > 2) return 999;
+  const m = a.length;
+  const n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1];
+      else dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/**
+ * Strictly check if candidate title matches what was queried by the user.
+ * Prevents fuzzy stop-word leaks (e.g. matching "the" or "you" to unrelated titles).
+ */
+function isRelevantMatch(itemTitle, query) {
+  const t = (itemTitle || "").toLowerCase().trim();
+  const q = (query || "").toLowerCase().trim();
+  if (!t || !q) return false;
+
+  if (t === q || t.includes(q)) return true;
+
+  const cleanT = t.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  const cleanQ = q.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  if (cleanT.includes(cleanQ)) return true;
+
+  const allQWords = cleanQ.split(" ").filter((w) => w.length > 0);
+  const significantQWords = allQWords.filter((w) => !STOP_WORDS.has(w));
+  const wordsToMatch =
+    significantQWords.length > 0 ? significantQWords : allQWords;
+
+  const tWords = cleanT.split(" ").filter((w) => w.length > 0);
+
+  let matchCount = 0;
+  for (const w of wordsToMatch) {
+    const found = tWords.some((tw) => {
+      if (tw === w) return true;
+      if (
+        w.length >= 4 &&
+        tw.length >= 4 &&
+        (tw.startsWith(w) || w.startsWith(tw))
+      )
+        return true;
+      if (w.length >= 5 && tw.length >= 5 && editDistance(tw, w) <= 1)
+        return true;
+      return false;
+    });
+    if (found) matchCount++;
+  }
+
+  if (wordsToMatch.length <= 2) {
+    return matchCount === wordsToMatch.length;
+  } else {
+    return matchCount >= Math.ceil(wordsToMatch.length * 0.75);
+  }
+}
+
 /**
  * Calculate relevance score between candidate title and user search query.
  */
@@ -417,10 +488,22 @@ async function SearchAnime(query, page = 1) {
   let totalPages = 1;
 
   try {
-    // 1. On page 1, check direct candidate slug match (e.g. "nice to not meet you" -> "nice-to-not-meet-you")
+    // 1. On page 1, check direct candidate slug matches (with and without "the-")
     if (pageNum === 1) {
-      const candidateSlug = slugify(searchQuery);
-      if (candidateSlug && candidateSlug.length >= 3) {
+      const baseSlug = slugify(searchQuery);
+      const candidateSlugs = new Set();
+      if (baseSlug) {
+        candidateSlugs.add(baseSlug);
+        if (!baseSlug.startsWith("the-")) {
+          candidateSlugs.add(`the-${baseSlug}`);
+        } else {
+          candidateSlugs.add(baseSlug.replace(/^the-/, ""));
+        }
+      }
+
+      for (const candidateSlug of candidateSlugs) {
+        if (!candidateSlug || candidateSlug.length < 3) continue;
+        if (seenSlugs.has(candidateSlug)) continue;
         try {
           const directUrl = `${baseUrl}/drama/${candidateSlug}`;
           const directRes = await httpGet(directUrl, {
@@ -436,6 +519,7 @@ async function SearchAnime(query, page = 1) {
                 if (item?.u?.includes("detail") && item?.b?.name) {
                   const b = item.b;
                   const itemSlug = b.slug || candidateSlug;
+                  if (seenSlugs.has(itemSlug)) break;
                   const bestImg = pickBestImage(b.image, b.coverImage);
                   results.push({
                     id: itemSlug,
@@ -457,90 +541,105 @@ async function SearchAnime(query, page = 1) {
     }
 
     // 2. Primary API search on dramacool9.rest
-    const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}`;
-    const res = await httpGet(searchUrl, {
-      headers: { Referer: `${baseUrl}/` },
-    });
-    const html = typeof res.data === "string" ? res.data : "";
+    // If query starts with stop words (e.g. "the remarried empress"), DramaCool search engine
+    // matches "the" across thousands of irrelevant shows. We search the full query and stripped query.
+    const queriesToSearch = [searchQuery];
+    const strippedQuery = searchQuery.replace(/^(the|a|an)\s+/i, "").trim();
+    if (strippedQuery && strippedQuery.toLowerCase() !== searchQuery.toLowerCase()) {
+      queriesToSearch.push(strippedQuery);
+    }
 
-    if (html) {
-      const state = parseNgState(html);
-      if (state) {
-        for (const k of Object.keys(state)) {
-          const item = state[k];
-          if (item?.u?.includes("search") && item?.b?.body) {
-            const bodyList = Array.isArray(item.b.body) ? item.b.body : [];
-            hasNext = !!item.b.hasNext;
-            totalPages = item.b.totalPages || 1;
+    for (const q of queriesToSearch) {
+      const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(q)}&page=${pageNum}`;
+      const res = await httpGet(searchUrl, {
+        headers: { Referer: `${baseUrl}/` },
+      });
+      const html = typeof res.data === "string" ? res.data : "";
 
-            for (const d of bodyList) {
-              const slug = d.slug;
-              if (!slug || seenSlugs.has(slug)) continue;
-              seenSlugs.add(slug);
+      if (html) {
+        const state = parseNgState(html);
+        if (state) {
+          for (const k of Object.keys(state)) {
+            const item = state[k];
+            if (item?.u?.includes("search") && item?.b?.body) {
+              const bodyList = Array.isArray(item.b.body) ? item.b.body : [];
+              hasNext = !!item.b.hasNext;
+              totalPages = item.b.totalPages || 1;
 
-              const bestImg = pickBestImage(d.image, d.coverImage);
-              results.push({
-                id: slug,
-                title: d.name || d.normalizedName || slug,
-                image: bestImg,
-                type: "Drama",
-                subDub: "Sub",
-                releaseYear: d.releaseYear ? String(d.releaseYear) : "",
-                status: d.status || "Unknown",
-              });
+              for (const d of bodyList) {
+                const slug = d.slug;
+                if (!slug || seenSlugs.has(slug)) continue;
+                seenSlugs.add(slug);
+
+                const bestImg = pickBestImage(d.image, d.coverImage);
+                results.push({
+                  id: slug,
+                  title: d.name || d.normalizedName || slug,
+                  image: bestImg,
+                  type: "Drama",
+                  subDub: "Sub",
+                  releaseYear: d.releaseYear ? String(d.releaseYear) : "",
+                  status: d.status || "Unknown",
+                });
+              }
+              break;
             }
-            break;
           }
         }
-      }
 
-      // Cheerio DOM Fallback
-      if (results.length === 0) {
-        const $ = cheerio.load(html);
-        $("a[href*='/drama/']").each((_, el) => {
-          const href = $(el).attr("href") || "";
-          const slug = cleanSlug(href);
-          if (!slug || seenSlugs.has(slug)) return;
-          seenSlugs.add(slug);
+        // Cheerio DOM Fallback
+        if (results.length === 0) {
+          const $ = cheerio.load(html);
+          $("a[href*='/drama/']").each((_, el) => {
+            const href = $(el).attr("href") || "";
+            const slug = cleanSlug(href);
+            if (!slug || seenSlugs.has(slug)) return;
+            seenSlugs.add(slug);
 
-          const title =
-            $(el).find(".title, h3, h2").text().trim() ||
-            $(el).attr("title") ||
-            slug;
-          const imgTag = $(el).find("img");
-          const image =
-            imgTag.attr("src") ||
-            imgTag.attr("data-src") ||
-            imgTag.attr("data-lazy-src") ||
-            null;
+            const title =
+              $(el).find(".title, h3, h2").text().trim() ||
+              $(el).attr("title") ||
+              slug;
+            const imgTag = $(el).find("img");
+            const image =
+              imgTag.attr("src") ||
+              imgTag.attr("data-src") ||
+              imgTag.attr("data-lazy-src") ||
+              null;
 
-          results.push({
-            id: slug,
-            title,
-            image,
-            type: "Drama",
-            subDub: "Sub",
+            results.push({
+              id: slug,
+              title,
+              image,
+              type: "Drama",
+              subDub: "Sub",
+            });
           });
-        });
+        }
       }
     }
 
-    // 3. Relevance ranking: Rank exact matches and query overlaps at the very top
-    results.sort((a, b) => {
+    // 3. Strict Relevance Filtering: Only display results that match what was queried
+    const filteredResults = results.filter((r) =>
+      isRelevantMatch(r.title, searchQuery),
+    );
+
+    // 4. Relevance ranking: Rank exact matches and query overlaps at the very top
+    filteredResults.sort((a, b) => {
       const scoreA = calculateRelevance(a.title, searchQuery);
       const scoreB = calculateRelevance(b.title, searchQuery);
       return scoreB - scoreA;
     });
 
     return {
-      results,
-      hasNextPage: hasNext,
+      results: filteredResults,
+      hasNextPage: hasNext && filteredResults.length >= 10,
       currentPage: pageNum,
-      totalPages,
+      totalPages: filteredResults.length === 0 ? 0 : totalPages,
     };
   } catch (err) {
     return {
-      results,
+      results: [],
       hasNextPage: false,
       currentPage: pageNum,
     };
@@ -948,7 +1047,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules,
   subrequestHeaders,
