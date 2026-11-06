@@ -139,6 +139,40 @@ function cleanSlug(str) {
 }
 
 /**
+ * Generate a clean URL slug from title text.
+ */
+function slugify(text) {
+  return (text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, "")
+    .replace(/[\s_-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Calculate relevance score between candidate title and user search query.
+ */
+function calculateRelevance(itemTitle, query) {
+  const t = (itemTitle || "").toLowerCase().trim();
+  const q = (query || "").toLowerCase().trim();
+  if (!t || !q) return 0;
+  if (t === q) return 1000;
+  if (t.startsWith(q)) return 600;
+  if (t.includes(q)) return 400;
+
+  const qWords = q.split(/\s+/).filter((w) => w.length > 1);
+  const tWords = t.split(/\s+/).filter((w) => w.length > 1);
+  if (qWords.length === 0 || tWords.length === 0) return 0;
+
+  let matches = 0;
+  for (const w of qWords) {
+    if (tWords.includes(w) || t.includes(w)) matches++;
+  }
+  return (matches / qWords.length) * 350;
+}
+
+/**
  * Parse Angular SSR pre-rendered state from HTML.
  * @param {string} html
  * @returns {Record<string, any>|null}
@@ -227,7 +261,7 @@ async function resolveVidbasicStream(embedUrl) {
 }
 
 /**
- * Search dramas by query string with pagination.
+ * Search dramas by query string with pagination, relevance scoring, and exact match resolution.
  * @param {string} query
  * @param {number|object} page
  * @returns {Promise<{ results: Array<any>, hasNextPage: boolean, currentPage: number, totalPages?: number }>}
@@ -235,75 +269,128 @@ async function resolveVidbasicStream(embedUrl) {
 async function SearchAnime(query, page = 1) {
   const pageNum = typeof page === "number" ? Math.max(1, page) : 1;
   const searchQuery = (query || "").trim();
+  if (!searchQuery) {
+    return { results: [], hasNextPage: false, currentPage: pageNum };
+  }
+
+  const results = [];
+  const seenSlugs = new Set();
+  let hasNext = false;
+  let totalPages = 1;
 
   try {
+    // 1. On page 1, check direct candidate slug match (e.g. "nice to not meet you" -> "nice-to-not-meet-you")
+    if (pageNum === 1) {
+      const candidateSlug = slugify(searchQuery);
+      if (candidateSlug && candidateSlug.length >= 3) {
+        try {
+          const directUrl = `${baseUrl}/drama/${candidateSlug}`;
+          const directRes = await httpGet(directUrl, {
+            headers: { Referer: `${baseUrl}/` },
+          });
+          const directHtml =
+            typeof directRes.data === "string" ? directRes.data : "";
+          if (directHtml) {
+            const directState = parseNgState(directHtml);
+            if (directState) {
+              for (const k of Object.keys(directState)) {
+                const item = directState[k];
+                if (item?.u?.includes("detail") && item?.b?.name) {
+                  const b = item.b;
+                  const itemSlug = b.slug || candidateSlug;
+                  results.push({
+                    id: itemSlug,
+                    title: b.name,
+                    image: b.image || b.coverImage || null,
+                    type: "Drama",
+                    subDub: "Sub",
+                    releaseYear: b.releaseYear ? String(b.releaseYear) : "",
+                    status: b.status || "Unknown",
+                  });
+                  seenSlugs.add(itemSlug);
+                  break;
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+    }
+
+    // 2. Primary API search on dramacool9.rest
     const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(searchQuery)}&page=${pageNum}`;
     const res = await httpGet(searchUrl, {
       headers: { Referer: `${baseUrl}/` },
     });
     const html = typeof res.data === "string" ? res.data : "";
-    if (!html) {
-      return { results: [], hasNextPage: false, currentPage: pageNum };
-    }
 
-    const state = parseNgState(html);
-    const results = [];
-    let hasNext = false;
-    let totalPages = 1;
+    if (html) {
+      const state = parseNgState(html);
+      if (state) {
+        for (const k of Object.keys(state)) {
+          const item = state[k];
+          if (item?.u?.includes("search") && item?.b?.body) {
+            const bodyList = Array.isArray(item.b.body) ? item.b.body : [];
+            hasNext = !!item.b.hasNext;
+            totalPages = item.b.totalPages || 1;
 
-    if (state) {
-      for (const k of Object.keys(state)) {
-        const item = state[k];
-        if (item?.u?.includes("search") && item?.b?.body) {
-          const bodyList = Array.isArray(item.b.body) ? item.b.body : [];
-          hasNext = !!item.b.hasNext;
-          totalPages = item.b.totalPages || 1;
+            for (const d of bodyList) {
+              const slug = d.slug;
+              if (!slug || seenSlugs.has(slug)) continue;
+              seenSlugs.add(slug);
 
-          for (const d of bodyList) {
-            if (!d.slug && !d.name) continue;
-            results.push({
-              id: d.slug,
-              title: d.name || d.normalizedName || d.slug,
-              image: d.image || d.coverImage || null,
-              type: "Drama",
-              subDub: "Sub",
-              releaseYear: d.releaseYear || "",
-              status: d.status || "Unknown",
-            });
+              results.push({
+                id: slug,
+                title: d.name || d.normalizedName || slug,
+                image: d.image || d.coverImage || null,
+                type: "Drama",
+                subDub: "Sub",
+                releaseYear: d.releaseYear ? String(d.releaseYear) : "",
+                status: d.status || "Unknown",
+              });
+            }
+            break;
           }
-          break;
         }
+      }
+
+      // Cheerio DOM Fallback
+      if (results.length === 0) {
+        const $ = cheerio.load(html);
+        $("a[href*='/drama/']").each((_, el) => {
+          const href = $(el).attr("href") || "";
+          const slug = cleanSlug(href);
+          if (!slug || seenSlugs.has(slug)) return;
+          seenSlugs.add(slug);
+
+          const title =
+            $(el).find(".title, h3, h2").text().trim() ||
+            $(el).attr("title") ||
+            slug;
+          const imgTag = $(el).find("img");
+          const image =
+            imgTag.attr("src") ||
+            imgTag.attr("data-src") ||
+            imgTag.attr("data-lazy-src") ||
+            null;
+
+          results.push({
+            id: slug,
+            title,
+            image,
+            type: "Drama",
+            subDub: "Sub",
+          });
+        });
       }
     }
 
-    // Cheerio fallback if ng-state was missing or empty
-    if (results.length === 0) {
-      const $ = cheerio.load(html);
-      $("a[href*='/drama/']").each((_, el) => {
-        const href = $(el).attr("href") || "";
-        const slug = cleanSlug(href);
-        if (!slug || results.some((r) => r.id === slug)) return;
-
-        const title =
-          $(el).find(".title, h3, h2").text().trim() ||
-          $(el).attr("title") ||
-          slug;
-        const imgTag = $(el).find("img");
-        const image =
-          imgTag.attr("src") ||
-          imgTag.attr("data-src") ||
-          imgTag.attr("data-lazy-src") ||
-          null;
-
-        results.push({
-          id: slug,
-          title,
-          image,
-          type: "Drama",
-          subDub: "Sub",
-        });
-      });
-    }
+    // 3. Relevance ranking: Rank exact matches and query overlaps at the very top
+    results.sort((a, b) => {
+      const scoreA = calculateRelevance(a.title, searchQuery);
+      const scoreB = calculateRelevance(b.title, searchQuery);
+      return scoreB - scoreA;
+    });
 
     return {
       results,
@@ -313,7 +400,7 @@ async function SearchAnime(query, page = 1) {
     };
   } catch (err) {
     return {
-      results: [],
+      results,
       hasNextPage: false,
       currentPage: pageNum,
     };
@@ -356,15 +443,21 @@ async function AnimeInfo(id) {
         const entry = state[k];
         if (entry?.u?.includes("detail") && entry?.b) {
           const b = entry.b;
-          dramaInfo.title = b.name || b.originalName || slug;
+          dramaInfo.title = String(b.name || b.originalName || slug);
           dramaInfo.image = b.image || b.coverImage || null;
           dramaInfo.image_url = dramaInfo.image;
-          dramaInfo.description =
-            b.description || b.synopsis || "";
-          dramaInfo.genres = Array.isArray(b.genres) ? b.genres : [];
-          dramaInfo.status = b.status || "Unknown";
+          dramaInfo.description = String(b.description || b.synopsis || "");
+
+          // CRITICAL FIX: b.genres is [{ name, url }], extract clean strings so React doesn't crash
+          dramaInfo.genres = Array.isArray(b.genres)
+            ? b.genres
+                .map((g) => (typeof g === "string" ? g : g?.name || ""))
+                .filter(Boolean)
+            : [];
+
+          dramaInfo.status = String(b.status || "Unknown");
           dramaInfo.aired = b.releaseYear ? String(b.releaseYear) : "";
-          dramaInfo.country = b.country || "";
+          dramaInfo.country = String(b.country || "");
 
           if (Array.isArray(b.episodes)) {
             dramaInfo.totalEpisodes = b.episodes.length;
@@ -373,9 +466,8 @@ async function AnimeInfo(id) {
               return {
                 id: `${slug}/episode-${epNum}`,
                 number: epNum,
-                title: ep.title || `Episode ${epNum}`,
+                title: ep.title ? String(ep.title) : `Episode ${epNum}`,
                 thumbnail: dramaInfo.image,
-                streamUrls: ep.streamUrls || [],
               };
             });
           }
@@ -660,7 +752,7 @@ async function fetchRecentEpisodes(page = 1) {
                   image: d.image || d.coverImage || null,
                   type: "Drama",
                   subDub: "Sub",
-                  releaseYear: d.releaseYear || "",
+                  releaseYear: d.releaseYear ? String(d.releaseYear) : "",
                   status: d.status || "Unknown",
                   episode: d.recentEp ? `Ep ${d.recentEp}` : null,
                 });
@@ -683,7 +775,7 @@ async function fetchRecentEpisodes(page = 1) {
                 image: d.image || d.coverImage || null,
                 type: "Drama",
                 subDub: "Sub",
-                releaseYear: d.releaseYear || "",
+                releaseYear: d.releaseYear ? String(d.releaseYear) : "",
                 status: d.status || "Unknown",
               });
             }
@@ -710,7 +802,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules,
   subrequestHeaders,
