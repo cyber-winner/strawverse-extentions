@@ -1,6 +1,12 @@
 {
   "Anime": [
     {
+      "name": "dramacool",
+      "version": "1.0.0",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
       "name": "cinejoy",
       "version": "1.0.7",
       "MinAppVersion": "11.1.1",
