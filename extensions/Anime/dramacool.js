@@ -25,7 +25,6 @@ const headerRules = [
       "asianctv",
       "streamwish",
       "hglink.to",
-      "vidmoly",
       "myasiantv",
       "drama123",
       "dramizo",
@@ -51,6 +50,34 @@ const headerRules = [
       Origin: "https://vidbasic.top",
     },
   },
+  {
+    match: [
+      "vmnow.online",
+      "vmpx.online",
+      "vidmoly.org",
+      "vidmoly.net",
+      "vidmoly.biz",
+      "vidmoly.to",
+    ],
+    headers: {
+      Referer: "https://vidmoly.org/",
+      Origin: "https://vidmoly.org",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    },
+  },
+  {
+    match: [
+      "streamtape.com",
+      "tapecontent.net",
+      "watchadsontape.com",
+    ],
+    headers: {
+      Referer: "https://streamtape.com/",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    },
+  },
 ];
 
 const subrequestHeaders = [
@@ -60,6 +87,8 @@ const subrequestHeaders = [
       "stream.vidbasic.top",
       "hls.vidbasic.top",
       "exoidol.space",
+      "vmnow.online",
+      "vmpx.online",
     ],
     headers: {
       Referer: "https://vidbasic.top/",
@@ -281,6 +310,95 @@ async function resolveVidbasicStream(embedUrl) {
 }
 
 /**
+ * Resolve Vidmoly player embed to direct HLS m3u8 playlist.
+ * @param {string} embedUrl
+ * @returns {Promise<{ url: string, headers: object }|null>}
+ */
+async function resolveVidmolyStream(embedUrl) {
+  try {
+    const res = await httpGet(embedUrl, {
+      headers: {
+        Referer: `${baseUrl}/`,
+      },
+    });
+    const html = typeof res.data === "string" ? res.data : "";
+    const m3u8Match = html.match(/https?:\/\/[^"'\s\\]+\.m3u8[^"'\s\\]*/);
+    if (m3u8Match) {
+      let host = "https://vidmoly.org/";
+      try {
+        host = new URL(embedUrl).origin + "/";
+      } catch (_) {}
+      return {
+        url: m3u8Match[0],
+        headers: {
+          Referer: host,
+          Origin: host.replace(/\/+$/, ""),
+        },
+      };
+    }
+  } catch (err) {}
+  return null;
+}
+
+/**
+ * Resolve Streamtape player embed to direct MP4 video link.
+ * @param {string} embedUrl
+ * @returns {Promise<{ url: string, headers: object }|null>}
+ */
+async function resolveStreamtapeStream(embedUrl) {
+  try {
+    const res = await httpGet(embedUrl, {
+      headers: {
+        Referer: `${baseUrl}/`,
+      },
+    });
+    const html = typeof res.data === "string" ? res.data : "";
+
+    // Pattern 1: robotlink with two substrings
+    const robotMatch = html.match(
+      /getElementById\(['"]robotlink['"]\)\.innerHTML\s*=\s*['"]([^'"]+)['"]\s*\+\s*\('([^']+)'\)\.substring\((\d+)\)\.substring\((\d+)\)/,
+    );
+    if (robotMatch) {
+      const prefix = robotMatch[1];
+      const str = robotMatch[2];
+      const sub1 = parseInt(robotMatch[3], 10);
+      const sub2 = parseInt(robotMatch[4], 10);
+      const fullUrl =
+        (prefix.startsWith("http") ? "" : "https:") +
+        prefix +
+        str.substring(sub1).substring(sub2);
+      return {
+        url: fullUrl,
+        headers: {
+          Referer: "https://streamtape.com/",
+        },
+      };
+    }
+
+    // Pattern 2: botlink / ideoolink with single substring
+    const botMatch = html.match(
+      /getElementById\(['"](?:botlink|ideoolink)['"]\)\.innerHTML\s*=\s*['"]([^'"]+)['"]\s*\+\s*\('([^']+)'\)\.substring\((\d+)\)/,
+    );
+    if (botMatch) {
+      const prefix = botMatch[1];
+      const str = botMatch[2];
+      const sub1 = parseInt(botMatch[3], 10);
+      const fullUrl =
+        (prefix.startsWith("http") ? "" : "https:") +
+        prefix +
+        str.substring(sub1);
+      return {
+        url: fullUrl,
+        headers: {
+          Referer: "https://streamtape.com/",
+        },
+      };
+    }
+  } catch (err) {}
+  return null;
+}
+
+/**
  * Search dramas by query string with pagination, relevance scoring, and exact match resolution.
  * @param {string} query
  * @param {number|object} page
@@ -479,7 +597,11 @@ async function AnimeInfo(id) {
                 .filter(Boolean)
             : [];
 
-          dramaInfo.status = String(b.status || "Unknown");
+          let dramaStatus = String(b.status || "").trim();
+          if (!dramaStatus && Array.isArray(b.episodes) && b.episodes.length === 0) {
+            dramaStatus = "Upcoming";
+          }
+          dramaInfo.status = dramaStatus || "Unknown";
           dramaInfo.aired = b.releaseYear ? String(b.releaseYear) : "";
           dramaInfo.country = String(b.country || "");
 
@@ -500,8 +622,8 @@ async function AnimeInfo(id) {
       }
     }
 
-    // HTML DOM Fallback
-    if (!dramaInfo.title || dramaInfo.episodes.length === 0) {
+    // HTML DOM Fallback (only if ng-state was completely absent)
+    if (!state && (!dramaInfo.title || dramaInfo.episodes.length === 0)) {
       const $ = cheerio.load(html);
       if (!dramaInfo.title) {
         dramaInfo.title =
@@ -513,18 +635,20 @@ async function AnimeInfo(id) {
         dramaInfo.image_url = dramaInfo.image;
       }
       if (dramaInfo.episodes.length === 0) {
-        $("a[href*='/episode-']").each((idx, el) => {
+        $("a").each((idx, el) => {
           const href = $(el).attr("href") || "";
-          const match = href.match(/episode-(\d+)/);
-          const epNum = match ? parseInt(match[1], 10) : idx + 1;
-          const epId = `${slug}/episode-${epNum}`;
-          if (!dramaInfo.episodes.some((e) => e.id === epId)) {
-            dramaInfo.episodes.push({
-              id: epId,
-              number: epNum,
-              title: $(el).text().trim() || `Episode ${epNum}`,
-              thumbnail: dramaInfo.image,
-            });
+          if (href.includes("/episode-") && href.includes(slug)) {
+            const match = href.match(/episode-(\d+)/);
+            const epNum = match ? parseInt(match[1], 10) : idx + 1;
+            const epId = `${slug}/episode-${epNum}`;
+            if (!dramaInfo.episodes.some((e) => e.id === epId)) {
+              dramaInfo.episodes.push({
+                id: epId,
+                number: epNum,
+                title: $(el).text().trim() || `Episode ${epNum}`,
+                thumbnail: dramaInfo.image,
+              });
+            }
           }
         });
         dramaInfo.totalEpisodes = dramaInfo.episodes.length;
@@ -593,6 +717,21 @@ async function fetchEpisodeSources(episodeId, category = null) {
       _global.registerStreamHeaders("dramacool9.rest", {
         Referer: "https://dramacool9.rest/",
       });
+      _global.registerStreamHeaders("vidmoly.org", {
+        Referer: "https://vidmoly.org/",
+        Origin: "https://vidmoly.org",
+      });
+      _global.registerStreamHeaders("vmnow.online", {
+        Referer: "https://vidmoly.org/",
+        Origin: "https://vidmoly.org",
+      });
+      _global.registerStreamHeaders("vmpx.online", {
+        Referer: "https://vidmoly.org/",
+        Origin: "https://vidmoly.org",
+      });
+      _global.registerStreamHeaders("streamtape.com", {
+        Referer: "https://streamtape.com/",
+      });
     }
 
     if (typeof _global.registerSubrequestHeaders === "function") {
@@ -607,6 +746,14 @@ async function fetchEpisodeSources(episodeId, category = null) {
       _global.registerSubrequestHeaders("hls.vidbasic.top", {
         Referer: "https://vidbasic.top/",
         Origin: "https://vidbasic.top",
+      });
+      _global.registerSubrequestHeaders("vmnow.online", {
+        Referer: "https://vidmoly.org/",
+        Origin: "https://vidmoly.org",
+      });
+      _global.registerSubrequestHeaders("vmpx.online", {
+        Referer: "https://vidmoly.org/",
+        Origin: "https://vidmoly.org",
       });
     }
 
@@ -666,60 +813,33 @@ async function fetchEpisodeSources(episodeId, category = null) {
       }
     }
 
-    // 2. Add fallback providers from streamUrls (Vidmoly, Streamwish, Streamtape, Mixdrop)
+    // 2. Resolve direct Vidmoly and Streamtape video streams
     for (const s of streamUrls) {
       if (!s.url) continue;
       const url = s.url.trim();
 
-      if (url.includes("vidmoly") && !sources.some((x) => x.url === url)) {
-        sources.push({
-          name: "DramaCool Vidmoly",
-          quality: "1080p / 720p",
-          url,
-          isM3U8: false,
-          headers: {
-            Referer: `${baseUrl}/`,
-          },
-        });
-      } else if (
-        (url.includes("streamwish") || url.includes("hglink.to")) &&
-        !sources.some((x) => x.url === url)
-      ) {
-        sources.push({
-          name: "DramaCool Streamwish",
-          quality: "720p (Streamwish)",
-          url,
-          isM3U8: false,
-          headers: {
-            Referer: `${baseUrl}/`,
-          },
-        });
-      } else if (
-        (url.includes("streamtape") || url.includes("watchadsontape")) &&
-        !sources.some((x) => x.url === url)
-      ) {
-        sources.push({
-          name: "DramaCool Streamtape",
-          quality: "720p (Streamtape)",
-          url,
-          isM3U8: false,
-          headers: {
-            Referer: `${baseUrl}/`,
-          },
-        });
-      } else if (
-        url.includes("mixdrop") &&
-        !sources.some((x) => x.url === url)
-      ) {
-        sources.push({
-          name: "DramaCool Mixdrop",
-          quality: "720p (Mixdrop)",
-          url,
-          isM3U8: false,
-          headers: {
-            Referer: `${baseUrl}/`,
-          },
-        });
+      if (url.includes("vidmoly")) {
+        const resolved = await resolveVidmolyStream(url);
+        if (resolved?.url && !sources.some((x) => x.url === resolved.url)) {
+          sources.push({
+            name: "DramaCool Vidmoly (HLS)",
+            quality: "1080p / 720p (HLS)",
+            url: resolved.url,
+            isM3U8: true,
+            headers: resolved.headers,
+          });
+        }
+      } else if (url.includes("streamtape") || url.includes("watchadsontape")) {
+        const resolved = await resolveStreamtapeStream(url);
+        if (resolved?.url && !sources.some((x) => x.url === resolved.url)) {
+          sources.push({
+            name: "DramaCool Streamtape (MP4)",
+            quality: "720p (MP4)",
+            url: resolved.url,
+            isM3U8: false,
+            headers: resolved.headers,
+          });
+        }
       }
     }
 
@@ -828,7 +948,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules,
   subrequestHeaders,
