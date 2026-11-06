@@ -2,7 +2,7 @@
   "Anime": [
     {
       "name": "kaidrama",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },

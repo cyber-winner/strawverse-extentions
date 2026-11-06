@@ -910,13 +910,13 @@ async function fetchEpisodeSources(episodeId, category = null) {
       const videoUrl = item.video;
       if (!videoUrl) continue;
 
-      // 1. Vidmoly -> direct master .m3u8
+      // 1. Vidmoly -> direct master .m3u8 (Primary: Multi-quality Adaptive HLS)
       if (videoUrl.includes("vidmoly")) {
         const resolved = await resolveVidmolyStream(videoUrl);
         if (resolved?.url && !sources.some((s) => s.url === resolved.url)) {
           sources.push({
-            name: "KaiDrama Vidmoly (HLS)",
-            quality: "HD (Auto)",
+            name: "KaiDrama Vidmoly (Fast HLS)",
+            quality: "1080p / 720p (HLS)",
             url: resolved.url,
             isM3U8: true,
             headers: resolved.headers,
@@ -924,26 +924,12 @@ async function fetchEpisodeSources(episodeId, category = null) {
         }
       }
 
-      // 2. Streamtape -> direct .mp4
-      else if (videoUrl.includes("streamtape")) {
-        const resolved = await resolveStreamtapeStream(videoUrl);
-        if (resolved?.url && !sources.some((s) => s.url === resolved.url)) {
-          sources.push({
-            name: "KaiDrama Streamtape (MP4)",
-            quality: "720p (MP4)",
-            url: resolved.url,
-            isM3U8: false,
-            headers: resolved.headers,
-          });
-        }
-      }
-
-      // 3. MixDrop -> direct .mp4
+      // 2. MixDrop -> direct .mp4 (Backup: Range-streamable MP4)
       else if (videoUrl.includes("mixdrop")) {
         const resolved = await resolveMixdropStream(videoUrl);
         if (resolved?.url && !sources.some((s) => s.url === resolved.url)) {
           sources.push({
-            name: "KaiDrama MixDrop (MP4)",
+            name: "KaiDrama MixDrop (Direct MP4)",
             quality: "720p (MP4)",
             url: resolved.url,
             isM3U8: false,
@@ -1050,7 +1036,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "kaidrama",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules,
   subrequestHeaders,
