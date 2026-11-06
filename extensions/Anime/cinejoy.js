@@ -33,10 +33,12 @@ const subrequestHeaders = [
 
 const bypassDomains = ["cinejoy", "bright67", "nebula", "wing.st", "cheaptruckrepairs"];
 
+const _global = typeof globalThis !== "undefined" ? globalThis : typeof global !== "undefined" ? global : {};
+
 // Resilient HTTP request helper (uses global.axios if available, falls back to native fetch)
 async function httpGet(url, options = {}) {
-  if (global.axios) {
-    return await global.axios.get(url, options);
+  if (_global.axios) {
+    return await _global.axios.get(url, options);
   }
   const headers = options.headers || {};
   const timeoutMs = options.timeout || 10000;
@@ -347,15 +349,15 @@ async function doFetchEpisodeSources(episodeId) {
         const streamUrl = extracted.result.url;
         try {
           const streamDomain = new URL(streamUrl).hostname;
-          if (typeof global.registerSubrequestHeaders === "function") {
-            global.registerSubrequestHeaders(streamDomain, {
+          if (typeof _global.registerSubrequestHeaders === "function") {
+            _global.registerSubrequestHeaders(streamDomain, {
               Referer: "https://cinejoy.pk/",
               Origin: "https://cinejoy.pk",
             });
           }
-          if (global.setDynamicReferer) {
-            global.setDynamicReferer(streamDomain, "https://cinejoy.pk/");
-            global.setFallbackReferer("https://cinejoy.pk/");
+          if (_global.setDynamicReferer) {
+            _global.setDynamicReferer(streamDomain, "https://cinejoy.pk/");
+            _global.setFallbackReferer("https://cinejoy.pk/");
           }
         } catch (_) {}
 
