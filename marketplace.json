@@ -2,7 +2,7 @@
   "Anime": [
     {
       "name": "cinejoy",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "MinAppVersion": "11.0.0",
       "disabled": false
     },
