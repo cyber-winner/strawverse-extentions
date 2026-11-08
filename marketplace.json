@@ -41,6 +41,12 @@
       "version": "1.0.3",
       "MinAppVersion": "11.1.1",
       "disabled": true
+    },
+    {
+      "name": "hdhub4u",
+      "version": "1.0.0",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
     }
   ],
   "Manga": [
