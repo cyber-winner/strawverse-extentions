@@ -94,7 +94,7 @@
     },
     {
       "name": "hentai2read",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
@@ -112,7 +112,7 @@
     },
     {
       "name": "hentaiforce",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "MinAppVersion": "11.1.1",
       "disabled": false
     }

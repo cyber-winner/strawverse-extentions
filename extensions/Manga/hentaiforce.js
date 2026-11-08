@@ -16,10 +16,10 @@
 
 const cheerio = require("cheerio");
 
-const baseUrl = "https://hentaiforce.me";
+const baseUrl = "https://hentaiforce.net";
 const fallbackBases = [
-  "https://hentaiforce.net",
   "https://hentaiforce.com",
+  "https://hentaiforce.me",
   "https://hentaiforce.org",
 ];
 
@@ -29,15 +29,15 @@ const defaultHeaders = {
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
   "Accept-Language": "en-US,en;q=0.9",
-  Referer: "https://hentaiforce.me/",
+  Referer: "https://hentaiforce.net/",
 };
 
 if (typeof global.setDynamicReferer === "function") {
-  global.setDynamicReferer("hentaiforce.me", "https://hentaiforce.me/");
-  global.setDynamicReferer("m1.hentaiforce.me", "https://hentaiforce.me/");
-  global.setDynamicReferer("hentaiforce.net", "https://hentaiforce.me/");
-  global.setDynamicReferer("hentaiforce.com", "https://hentaiforce.me/");
-  global.setDynamicReferer("hentaiforce.org", "https://hentaiforce.me/");
+  global.setDynamicReferer("hentaiforce.net", "https://hentaiforce.net/");
+  global.setDynamicReferer("hentaiforce.me", "https://hentaiforce.net/");
+  global.setDynamicReferer("m1.hentaiforce.me", "https://hentaiforce.net/");
+  global.setDynamicReferer("hentaiforce.com", "https://hentaiforce.net/");
+  global.setDynamicReferer("hentaiforce.org", "https://hentaiforce.net/");
 }
 
 async function getHtmlWithFallback(path) {
@@ -425,7 +425,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentaiforce",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules: [
     {
@@ -437,31 +437,31 @@ module.exports = {
         "hentaiforce.org",
       ],
       headers: {
-        Referer: "https://hentaiforce.me/",
-        Origin: "https://hentaiforce.me",
+        Referer: "https://hentaiforce.net/",
+        Origin: "https://hentaiforce.net",
       },
     },
   ],
   subrequestHeaders: [
     {
       match: [
+        "hentaiforce.net",
         "hentaiforce.me",
         "m1.hentaiforce.me",
-        "hentaiforce.net",
         "hentaiforce.com",
         "hentaiforce.org",
       ],
       headers: {
-        Referer: "https://hentaiforce.me/",
-        Origin: "https://hentaiforce.me",
+        Referer: "https://hentaiforce.net/",
+        Origin: "https://hentaiforce.net",
       },
     },
   ],
   getHeaders(url) {
     if (url && (url.includes("hentaiforce") || url.includes("m1.hentaiforce"))) {
       return {
-        Referer: "https://hentaiforce.me/",
-        Origin: "https://hentaiforce.me",
+        Referer: "https://hentaiforce.net/",
+        Origin: "https://hentaiforce.net",
       };
     }
     return {};

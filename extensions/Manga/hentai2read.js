@@ -101,7 +101,10 @@ async function latestManga(page = 1, filters = {}) {
       : filters
   );
   try {
-    const url = `${baseUrl}/browse?page=${pageNum}`;
+    const url =
+      pageNum > 1
+        ? `${baseUrl}/browse/page-${pageNum}`
+        : `${baseUrl}/browse`;
     const inertia = await getInertiaData(url);
 
     if (!inertia || !inertia.props) {
@@ -345,7 +348,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hentai2read",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules: [
     {
