@@ -34,7 +34,7 @@ Includes scrapers for Asian dramas, movies, multi-language dubbed anime, ecchi, 
 
 | Extension | Category | Version | Status | Description |
 |:---|:---:|:---:|:---:|:---|
-| **HDHub4u** | Movies / TV | `v1.0.1` | `Active` | Bollywood, Hollywood, South Indian movies, and web series in Hindi Dubbed and Dual Audio from hdhub4u. Supports PlayDrive, Play4U, and HDStream4u multi-quality HLS streams with multi-language audio tracks and subtitles. |
+| **HDHub4u** | Movies / TV | `v1.0.2` | `Active` | Bollywood, Hollywood, South Indian movies, and web series in Hindi Dubbed and Dual Audio from hdhub4u. Supports PlayDrive, Play4U, and HDStream4u multi-quality HLS streams with multi-language audio tracks and subtitles. |
 | **Cinejoy** | Movies / TV | `v1.0.7` | `Active` | Movies and TV shows with multiple video servers, subtitle tracks, and search. |
 
 ---

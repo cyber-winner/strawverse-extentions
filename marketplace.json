@@ -44,7 +44,7 @@
     },
     {
       "name": "hdhub4u",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "MinAppVersion": "11.1.1",
       "disabled": false
     }

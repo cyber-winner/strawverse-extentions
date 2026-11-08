@@ -669,53 +669,48 @@ async function AnimeInfo(id) {
       const episodes = [];
       const seenEps = new Set();
 
-      // Parse episode structure from heading patterns
-      // HDHub4u uses: <h3>EPiSODE N</h3> followed by quality links
-      const headings = [];
-      $("h2, h3, h4").each((_, el) => {
-        headings.push({
-          tag: el.tagName,
-          text: $(el).text().trim(),
-          html: $(el).html(),
-        });
-      });
-
       let currentEp = null;
       let epLinks = {};
 
-      for (const h of headings) {
-        const epMatch = h.text.match(/EP[iI]SODE\s*(\d+)/);
-        if (epMatch) {
-          // Save previous episode
-          if (currentEp && Object.keys(epLinks).length > 0) {
-            if (!seenEps.has(currentEp)) {
-              seenEps.add(currentEp);
-              episodes.push({
-                id: `${cleanId}::ep${currentEp}`,
-                number: currentEp,
-                title: `Episode ${currentEp}`,
-                thumbnail: info.image,
-                _links: { ...epLinks },
-              });
-            }
+      const saveCurrentEp = () => {
+        if (currentEp && Object.keys(epLinks).length > 0) {
+          if (!seenEps.has(currentEp)) {
+            seenEps.add(currentEp);
+            episodes.push({
+              id: `${cleanId}::ep${currentEp}`,
+              number: currentEp,
+              title: `Episode ${currentEp}`,
+              thumbnail: info.image,
+              _links: { ...epLinks },
+            });
           }
+        }
+      };
+
+      // Support all HDHub4u episode layouts:
+      // Layout 1: <h3>EPiSODE 1 | WATCH</h3> with links directly inside
+      // Layout 2: <h3>EPiSODE 1</h3> followed by <h4>720p - Drive | WATCH</h4>
+      // Layout 3: <p>EPiSODE 1 | <a href="...">WATCH</a></p>
+      $("h2, h3, h4, p").each((_, el) => {
+        const text = $(el).text().trim();
+        const epMatch = text.match(/EP[iI]SODE\s*(\d+)/i);
+        if (epMatch) {
+          saveCurrentEp();
           currentEp = parseInt(epMatch[1], 10);
           epLinks = {};
-          continue;
         }
 
         if (currentEp) {
-          // Extract links from this heading
-          const $h = cheerio.load(h.html || "");
-          $h("a").each((_, el) => {
-            const href = $h(el).attr("href") || "";
-            const text = $h(el).text().trim().toUpperCase();
+          $(el).find("a").each((_, a) => {
+            const href = $(a).attr("href") || "";
             if (href.includes("hdstream4u.com")) {
               epLinks.watch = href;
             } else if (href.includes("playdrive.vip") || href.includes("play4u.org")) {
               epLinks.playdrive = href;
+            } else if (href.includes("hubstream.art")) {
+              if (!epLinks.hubstream) epLinks.hubstream = href;
             } else if (href.includes("hubdrive.blog")) {
-              if (!epLinks.hubdrive720 && h.text.includes("720"))
+              if (!epLinks.hubdrive720 && text.includes("720"))
                 epLinks.hubdrive720 = href;
               else if (!epLinks.hubdrive1080) epLinks.hubdrive1080 = href;
             } else if (href.includes("hubcdn.club")) {
@@ -723,19 +718,8 @@ async function AnimeInfo(id) {
             }
           });
         }
-      }
-
-      // Push last episode
-      if (currentEp && Object.keys(epLinks).length > 0 && !seenEps.has(currentEp)) {
-        seenEps.add(currentEp);
-        episodes.push({
-          id: `${cleanId}::ep${currentEp}`,
-          number: currentEp,
-          title: `Episode ${currentEp}`,
-          thumbnail: info.image,
-          _links: { ...epLinks },
-        });
-      }
+      });
+      saveCurrentEp();
 
       // If no per-episode links found, look for batch playdrive/watch links
       if (episodes.length === 0) {
@@ -1146,26 +1130,17 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
     if (episodeNum) {
       // Per-episode: find the specific episode's links
-      const headings = [];
-      $("h2, h3, h4").each((_, el) => {
-        headings.push({
-          text: $(el).text().trim(),
-          html: $(el).html(),
-        });
-      });
-
       let currentEp = null;
-      for (const h of headings) {
-        const epMatch = h.text.match(/EP[iI]SODE\s*(\d+)/);
+      $("h2, h3, h4, p").each((_, el) => {
+        const text = $(el).text().trim();
+        const epMatch = text.match(/EP[iI]SODE\s*(\d+)/i);
         if (epMatch) {
           currentEp = parseInt(epMatch[1], 10);
-          continue;
         }
 
         if (currentEp === episodeNum) {
-          const $h = cheerio.load(h.html || "");
-          $h("a").each((_, el) => {
-            const href = $h(el).attr("href") || "";
+          $(el).find("a").each((_, a) => {
+            const href = $(a).attr("href") || "";
             if (href.includes("hdstream4u.com") && !hdstreamUrl) {
               hdstreamUrl = href;
             }
@@ -1178,7 +1153,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
             }
           });
         }
-      }
+      });
     } else {
       // Movie or batch: use the first playdrive/play4u/hdstream link found
       playdriveUrl =
@@ -1370,7 +1345,7 @@ function getHeaders(targetUrl) {
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules,
   subrequestHeaders,
