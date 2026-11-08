@@ -187,6 +187,21 @@ function slugify(text) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
+}
+
 /**
  * Filter out hotlink-blocked image CDNs (e.g. asiaflix.net returns 403 on direct requests)
  * and prioritize TMDB or unblocked mirrors.
@@ -476,10 +491,17 @@ async function resolveStreamtapeStream(embedUrl) {
  * @returns {Promise<{ results: Array<any>, hasNextPage: boolean, currentPage: number, totalPages?: number }>}
  */
 async function SearchAnime(query, page = 1) {
-  const pageNum = typeof page === "number" ? Math.max(1, page) : 1;
+  const pageNum = normalizePage(page);
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
-    return { results: [], hasNextPage: false, currentPage: pageNum };
+    return {
+      results: [],
+      hasNextPage: false,
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: 0,
+    };
   }
 
   const results = [];
@@ -635,6 +657,8 @@ async function SearchAnime(query, page = 1) {
       results: filteredResults,
       hasNextPage: hasNext && filteredResults.length >= 10,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: filteredResults.length === 0 ? 0 : totalPages,
     };
   } catch (err) {
@@ -642,6 +666,9 @@ async function SearchAnime(query, page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: 0,
     };
   }
 }
@@ -954,7 +981,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
  * @param {number|object} page
  */
 async function fetchRecentEpisodes(page = 1) {
-  const pageNum = typeof page === "number" ? Math.max(1, page) : 1;
+  const pageNum = normalizePage(page);
 
   try {
     const targetUrl =
@@ -967,7 +994,14 @@ async function fetchRecentEpisodes(page = 1) {
     });
     const html = typeof res.data === "string" ? res.data : "";
     if (!html) {
-      return { results: [], hasNextPage: false, currentPage: pageNum };
+      return {
+        results: [],
+        hasNextPage: false,
+        currentPage: pageNum,
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 0,
+      };
     }
 
     const state = parseNgState(html);
@@ -1034,6 +1068,8 @@ async function fetchRecentEpisodes(page = 1) {
       results,
       hasNextPage: hasNext,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages,
     };
   } catch (err) {
@@ -1041,13 +1077,16 @@ async function fetchRecentEpisodes(page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: 0,
     };
   }
 }
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.4",
+  version: "1.0.5",
   baseUrl,
   headerRules,
   subrequestHeaders,

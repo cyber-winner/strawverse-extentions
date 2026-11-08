@@ -435,9 +435,19 @@ function normalizeImageUrl(img) {
   return `${baseUrl}/${img}`;
 }
 
-function normalizePage(page) {
-  const p = parseInt(page, 10);
-  return isNaN(p) || p < 1 ? 1 : p;
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
 }
 
 function extractRscPayload(html) {
@@ -816,10 +826,18 @@ async function solveNhPlayer(embedUrl) {
  * Search anime catalog using official JSON search endpoint.
  */
 async function SearchAnime(query, page = 1) {
+  const pageNum = normalizePage(page);
   try {
     const q = String(query || "").trim();
     if (!q) {
-      return { currentPage: 1, hasNextPage: false, totalPages: 0, results: [] };
+      return {
+        currentPage: pageNum,
+        current_page: pageNum,
+        page: pageNum,
+        hasNextPage: false,
+        totalPages: 0,
+        results: [],
+      };
     }
 
     const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}`;
@@ -853,14 +871,23 @@ async function SearchAnime(query, page = 1) {
     }
 
     return {
-      currentPage: 1,
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: false,
       totalPages: 1,
       results,
     };
   } catch (err) {
     console.error("1hanime SearchAnime error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1105,15 +1132,27 @@ async function fetchRecentEpisodes(page = 1) {
       }
     }
 
+    const finalResults =
+      pageNum > 1 && results.length > 8 ? results.slice(8) : results;
+
     return {
       currentPage: pageNum,
-      hasNextPage: results.length > 0,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: finalResults.length > 0,
       totalPages: 100,
-      results,
+      results: finalResults,
     };
   } catch (err) {
     console.error("1hanime fetchRecentEpisodes error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1162,13 +1201,22 @@ async function fetchTrending(page = 1) {
 
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: results.length > 0,
       totalPages: 100,
       results,
     };
   } catch (err) {
     console.error("1hanime fetchTrending error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1194,7 +1242,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.6",
+  version: "1.0.7",
   baseUrl,
   aliasUrl,
   headerRules,

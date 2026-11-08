@@ -140,9 +140,28 @@ function parseRscFallback(html) {
   return results;
 }
 
-async function latestManga(page = 1) {
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
+}
+
+async function latestManga(page = 1, filters = {}) {
+  const pageNum = normalizePage(
+    page !== undefined && page !== null && (typeof page === "number" || typeof page === "string" || (typeof page === "object" && page.page !== undefined))
+      ? page
+      : filters
+  );
   try {
-    const pageNum = parseInt(page, 10) || 1;
     const url = `${baseUrl}/manga?page=${pageNum}`;
     const html = await getHtml(url);
     const $ = cheerio.load(html);
@@ -152,6 +171,7 @@ async function latestManga(page = 1) {
     }
 
     return {
+      currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
       totalPages: results.length > 0 ? pageNum + 1 : pageNum,
@@ -160,18 +180,23 @@ async function latestManga(page = 1) {
     };
   } catch (err) {
     return {
-      current_page: 1,
-      page: 1,
-      totalPages: 1,
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: pageNum,
       hasNextPage: false,
       results: [],
     };
   }
 }
 
-async function searchManga(query, page = 1) {
+async function searchManga(query, page = 1, filters = {}) {
+  const pageNum = normalizePage(
+    page !== undefined && page !== null && (typeof page === "number" || typeof page === "string" || (typeof page === "object" && page.page !== undefined))
+      ? page
+      : filters
+  );
   try {
-    const pageNum = parseInt(page, 10) || 1;
     if (!query || !query.trim()) {
       return latestManga(pageNum);
     }
@@ -186,6 +211,7 @@ async function searchManga(query, page = 1) {
     }
 
     return {
+      currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
       totalPages: results.length > 0 ? pageNum + 1 : pageNum,
@@ -194,9 +220,10 @@ async function searchManga(query, page = 1) {
     };
   } catch (err) {
     return {
-      current_page: 1,
-      page: 1,
-      totalPages: 1,
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: pageNum,
       hasNextPage: false,
       results: [],
     };
@@ -320,7 +347,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "simplyhentai",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules: [
     {

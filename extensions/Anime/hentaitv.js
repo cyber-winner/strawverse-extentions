@@ -414,11 +414,16 @@ async function httpGet(url, options = {}) {
 }
 
 function normalizePage(arg) {
-  if (typeof arg === "number") return Math.max(1, arg);
-  if (typeof arg === "string") return Math.max(1, parseInt(arg, 10) || 1);
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
   if (arg && typeof arg === "object") {
-    if (typeof arg.page === "number") return Math.max(1, arg.page);
-    if (typeof arg.page === "string") return Math.max(1, parseInt(arg.page, 10) || 1);
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
   }
   return 1;
 }
@@ -1130,6 +1135,47 @@ async function fetchEpisodeSources(episodeId, category = null) {
 async function fetchRecentEpisodes(page = 1) {
   const pageNum = normalizePage(page);
   try {
+    // 1. Try official JSON browse API (supports clean server-side pagination)
+    try {
+      const apiUrl = `${baseUrl}/api/browse?page=${pageNum}`;
+      const res = await httpGet(apiUrl, {
+        headers: {
+          Accept: "application/json",
+          Referer: `${baseUrl}/browse`,
+        },
+      });
+
+      const data = typeof res.data === "object" ? res.data : JSON.parse(res.data || "{}");
+      const videos = data.videos || [];
+      if (videos.length > 0) {
+        const results = videos.map((v) => {
+          const thumb = v.thumb || v.cover || v.featureImage;
+          const image = thumb
+            ? (thumb.startsWith("http") ? thumb : `${baseUrl}${thumb}`)
+            : null;
+          return {
+            id: v.slug || v.titleSlug,
+            title: v.title || v.slug,
+            episode: typeof v.ep === "number" ? v.ep : 1,
+            image,
+            type: "Hentai",
+            subDub: v.language || "Sub",
+          };
+        });
+
+        const totalPages = typeof data.pages === "number" ? data.pages : 126;
+        return {
+          currentPage: pageNum,
+          current_page: pageNum,
+          page: pageNum,
+          hasNextPage: pageNum < totalPages,
+          totalPages,
+          results,
+        };
+      }
+    } catch (_) {}
+
+    // 2. Fallback to RSC browse scraping
     const url = pageNum === 1 ? `${baseUrl}/browse` : `${baseUrl}/browse?page=${pageNum}`;
     const res = await httpGet(url, {
       headers: { Referer: `${baseUrl}/` },
@@ -1167,15 +1213,27 @@ async function fetchRecentEpisodes(page = 1) {
       }
     }
 
+    const finalResults =
+      pageNum > 1 && results.length > 8 ? results.slice(8) : results;
+
     return {
       currentPage: pageNum,
-      hasNextPage: results.length >= 20,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: finalResults.length >= 20,
       totalPages: 100,
-      results,
+      results: finalResults,
     };
   } catch (err) {
     console.error("HentaiTv fetchRecentEpisodes error:", err.message);
-    return { currentPage: pageNum, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1223,13 +1281,22 @@ async function fetchTrending(page = 1) {
 
     return {
       currentPage: 1,
+      current_page: 1,
+      page: 1,
       hasNextPage: false,
       totalPages: 1,
       results,
     };
   } catch (err) {
     console.error("HentaiTv fetchTrending error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: 1,
+      current_page: 1,
+      page: 1,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1255,7 +1322,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "hentaitv",
-  version: "1.0.6",
+  version: "1.0.7",
   baseUrl,
   headerRules,
   subrequestHeaders,

@@ -73,6 +73,9 @@ function normalizePage(arg) {
     if (typeof arg.page === "string" && /^\d+$/.test(arg.page.trim())) {
       return Math.max(1, Math.min(500, parseInt(arg.page.trim(), 10)));
     }
+    if (arg.filters && typeof arg.filters === "object") {
+      return normalizePage(arg.filters);
+    }
   }
   return 1;
 }
@@ -123,13 +126,23 @@ async function SearchAnime(query, filters = {}) {
 
     return {
       currentPage: page,
+      current_page: page,
+      page: page,
       hasNextPage: page < totalPages,
       totalPages: totalPages,
       results,
     };
   } catch (err) {
     console.error("Cinejoy search error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 1, results: [] };
+    const p = normalizePage(filters);
+    return {
+      currentPage: p,
+      current_page: p,
+      page: p,
+      hasNextPage: false,
+      totalPages: 1,
+      results: [],
+    };
   }
 }
 
@@ -167,13 +180,23 @@ async function fetchRecentEpisodes(filters = {}) {
 
     return {
       currentPage: page,
+      current_page: page,
+      page: page,
       hasNextPage: page < totalPages,
       totalPages: totalPages,
       results,
     };
   } catch (err) {
     console.error("Cinejoy fetchRecentEpisodes error:", err.message);
-    return { currentPage: 1, hasNextPage: false, totalPages: 1, results: [] };
+    const p = normalizePage(filters);
+    return {
+      currentPage: p,
+      current_page: p,
+      page: p,
+      hasNextPage: false,
+      totalPages: 1,
+      results: [],
+    };
   }
 }
 
@@ -427,7 +450,7 @@ async function doFetchEpisodeSources(episodeId) {
 
 module.exports = {
   name: "cinejoy",
-  version: "1.0.7",
+  version: "1.0.8",
   baseUrl,
   headerRules,
   subrequestHeaders,

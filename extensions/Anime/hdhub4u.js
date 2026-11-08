@@ -181,6 +181,21 @@ function cleanSlug(str) {
   return clean;
 }
 
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
+}
+
 /**
  * Extract clean movie/series title from HDHub4u post title.
  * e.g. "Deadpool & Wolverine (2024) BluRay [Hindi (ORG 5.1) & English] ..." → "Deadpool & Wolverine"
@@ -456,12 +471,7 @@ function calculateRelevance(itemTitle, query) {
  * @param {number|object} page - Page number or filter object
  */
 async function SearchAnime(query, page = 1) {
-  let pageNum = 1;
-  if (typeof page === "number") {
-    pageNum = Math.max(1, page);
-  } else if (page && typeof page === "object") {
-    pageNum = Math.max(1, parseInt(page.page, 10) || 1);
-  }
+  const pageNum = normalizePage(page);
 
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
@@ -469,6 +479,8 @@ async function SearchAnime(query, page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: 0,
     };
   }
@@ -557,6 +569,8 @@ async function SearchAnime(query, page = 1) {
       results: filteredResults.length > 0 ? filteredResults : results,
       hasNextPage: hasNext,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages,
     };
   } catch (err) {
@@ -564,6 +578,8 @@ async function SearchAnime(query, page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: 0,
     };
   }
@@ -1213,12 +1229,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
  * @param {number|object} page
  */
 async function fetchRecentEpisodes(page = 1) {
-  let pageNum = 1;
-  if (typeof page === "number") {
-    pageNum = Math.max(1, page);
-  } else if (page && typeof page === "object") {
-    pageNum = Math.max(1, parseInt(page.page, 10) || 1);
-  }
+  const pageNum = normalizePage(page);
 
   const results = [];
   const seenIds = new Set();
@@ -1238,6 +1249,8 @@ async function fetchRecentEpisodes(page = 1) {
         results,
         hasNextPage: false,
         currentPage: pageNum,
+        current_page: pageNum,
+        page: pageNum,
         totalPages: 0,
       };
     }
@@ -1296,6 +1309,8 @@ async function fetchRecentEpisodes(page = 1) {
       results,
       hasNextPage: hasNext,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages,
     };
   } catch (err) {
@@ -1303,6 +1318,8 @@ async function fetchRecentEpisodes(page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: 0,
     };
   }
@@ -1345,7 +1362,7 @@ function getHeaders(targetUrl) {
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules,
   subrequestHeaders,

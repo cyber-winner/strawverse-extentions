@@ -135,9 +135,28 @@ async function readNozomiIds(url, page = 1, pageSize = 20) {
   return { ids, totalItems };
 }
 
-async function latestManga(page = 1) {
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
+}
+
+async function latestManga(page = 1, filters = {}) {
+  const pageNum = normalizePage(
+    page !== undefined && page !== null && (typeof page === "number" || typeof page === "string" || (typeof page === "object" && page.page !== undefined))
+      ? page
+      : filters
+  );
   try {
-    const pageNum = parseInt(page, 10) || 1;
     const pageSize = 20;
     const { ids, totalItems } = await readNozomiIds(
       `${ltnBase}/index-all.nozomi`,
@@ -173,6 +192,7 @@ async function latestManga(page = 1) {
 
     const totalPages = totalItems > 0 ? Math.ceil(totalItems / pageSize) : pageNum + 1;
     return {
+      currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
       totalPages,
@@ -180,13 +200,24 @@ async function latestManga(page = 1) {
       results,
     };
   } catch (err) {
-    return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+    return {
+      currentPage: 1,
+      current_page: 1,
+      page: 1,
+      totalPages: 1,
+      hasNextPage: false,
+      results: [],
+    };
   }
 }
 
-async function searchManga(query, page = 1) {
+async function searchManga(query, page = 1, filters = {}) {
+  const pageNum = normalizePage(
+    page !== undefined && page !== null && (typeof page === "number" || typeof page === "string" || (typeof page === "object" && page.page !== undefined))
+      ? page
+      : filters
+  );
   try {
-    const pageNum = parseInt(page, 10) || 1;
     const pageSize = 20;
     const cleanQuery = encodeURIComponent(
       query.trim().toLowerCase().replace(/\s+/g, "_")
@@ -210,7 +241,14 @@ async function searchManga(query, page = 1) {
     }
 
     if (!res || !res.ids || res.ids.length === 0) {
-      return { results: [], page: 1, totalPages: 1, hasNextPage: false };
+      return {
+        currentPage: pageNum,
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 1,
+        hasNextPage: false,
+        results: [],
+      };
     }
 
     const gg = await fetchGg();
@@ -243,6 +281,7 @@ async function searchManga(query, page = 1) {
       res.totalItems > 0 ? Math.ceil(res.totalItems / pageSize) : pageNum;
 
     return {
+      currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
       totalPages,
@@ -251,6 +290,7 @@ async function searchManga(query, page = 1) {
     };
   } catch (err) {
     return {
+      currentPage: 1,
       current_page: 1,
       page: 1,
       totalPages: 1,
@@ -362,7 +402,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hitomi",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules: [
     {

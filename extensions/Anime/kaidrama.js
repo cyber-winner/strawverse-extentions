@@ -176,6 +176,21 @@ function slugify(text) {
     .replace(/^-+|-+$/g, "");
 }
 
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
+}
+
 /**
  * Extract highest-resolution image from img element attributes.
  */
@@ -462,16 +477,18 @@ async function resolveMixdropStream(embedUrl) {
  * @param {number|object} page - Page number or filter object
  */
 async function SearchAnime(query, page = 1) {
-  let pageNum = 1;
-  if (typeof page === "number") {
-    pageNum = Math.max(1, page);
-  } else if (page && typeof page === "object") {
-    pageNum = Math.max(1, parseInt(page.page, 10) || 1);
-  }
+  const pageNum = normalizePage(page);
 
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
-    return { results: [], hasNextPage: false, currentPage: pageNum, totalPages: 0 };
+    return {
+      results: [],
+      hasNextPage: false,
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      totalPages: 0,
+    };
   }
 
   const results = [];
@@ -559,6 +576,8 @@ async function SearchAnime(query, page = 1) {
       results: filteredResults,
       hasNextPage: hasNext && filteredResults.length >= 18,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: filteredResults.length === 0 ? 0 : totalPages,
     };
   } catch (err) {
@@ -566,6 +585,8 @@ async function SearchAnime(query, page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: 0,
     };
   }
@@ -950,12 +971,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
  * @param {number|object} page
  */
 async function fetchRecentEpisodes(page = 1) {
-  let pageNum = 1;
-  if (typeof page === "number") {
-    pageNum = Math.max(1, page);
-  } else if (page && typeof page === "object") {
-    pageNum = Math.max(1, parseInt(page.page, 10) || 1);
-  }
+  const pageNum = normalizePage(page);
 
   const results = [];
   const seenIds = new Set();
@@ -973,7 +989,14 @@ async function fetchRecentEpisodes(page = 1) {
     });
     const html = typeof res.data === "string" ? res.data : "";
     if (!html) {
-      return { results, hasNextPage: false, currentPage: pageNum, totalPages: 0 };
+      return {
+        results,
+        hasNextPage: false,
+        currentPage: pageNum,
+        current_page: pageNum,
+        page: pageNum,
+        totalPages: 0,
+      };
     }
 
     const $ = cheerio.load(html);
@@ -1022,6 +1045,8 @@ async function fetchRecentEpisodes(page = 1) {
       results,
       hasNextPage: hasNext,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages,
     };
   } catch (err) {
@@ -1029,6 +1054,8 @@ async function fetchRecentEpisodes(page = 1) {
       results: [],
       hasNextPage: false,
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       totalPages: 0,
     };
   }
@@ -1036,7 +1063,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "kaidrama",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules,
   subrequestHeaders,

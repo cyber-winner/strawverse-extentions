@@ -76,12 +76,16 @@ async function httpGet(url, options = {}) {
 }
 
 function normalizePage(arg) {
-  if (typeof arg === "number") return Math.max(1, arg);
-  if (typeof arg === "string") return Math.max(1, parseInt(arg, 10) || 1);
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
   if (arg && typeof arg === "object") {
-    if (typeof arg.page === "number") return Math.max(1, arg.page);
-    if (typeof arg.page === "string")
-      return Math.max(1, parseInt(arg.page, 10) || 1);
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
   }
   return 1;
 }
@@ -193,14 +197,19 @@ async function SearchAnime(query, page = 1) {
 
     return {
       currentPage: pagination.currentPage,
+      current_page: pagination.currentPage,
+      page: pagination.currentPage,
       hasNextPage: pagination.hasNextPage,
       totalPages: pagination.totalPages,
       results,
     };
   } catch (err) {
     console.error("AnimeSalt SearchAnime error:", err.message);
+    const pNum = normalizePage(page);
     return {
-      currentPage: normalizePage(page),
+      currentPage: pNum,
+      current_page: pNum,
+      page: pNum,
       hasNextPage: false,
       totalPages: 0,
       results: [],
@@ -650,14 +659,19 @@ async function fetchRecentEpisodes(page = 1) {
 
     return {
       currentPage: pagination.currentPage,
+      current_page: pagination.currentPage,
+      page: pagination.currentPage,
       hasNextPage: pagination.hasNextPage,
       totalPages: pagination.totalPages,
       results,
     };
   } catch (err) {
     console.error("AnimeSalt fetchRecentEpisodes error:", err.message);
+    const pNum = normalizePage(page);
     return {
-      currentPage: normalizePage(page),
+      currentPage: pNum,
+      current_page: pNum,
+      page: pNum,
       hasNextPage: false,
       totalPages: 0,
       results: [],
@@ -667,7 +681,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "animesalt",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules,
   subrequestHeaders,

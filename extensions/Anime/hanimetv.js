@@ -288,9 +288,19 @@ function cleanSlug(str) {
   return clean;
 }
 
-function normalizePage(page) {
-  const parsed = parseInt(page, 10);
-  return isNaN(parsed) || parsed < 1 ? 1 : parsed;
+function normalizePage(arg) {
+  if (typeof arg === "number" && Number.isFinite(arg)) {
+    return Math.max(1, Math.floor(arg));
+  }
+  if (typeof arg === "string") {
+    const p = parseInt(arg.trim(), 10);
+    return isNaN(p) || p < 1 ? 1 : p;
+  }
+  if (arg && typeof arg === "object") {
+    if (arg.page !== undefined) return normalizePage(arg.page);
+    if (arg.filters && typeof arg.filters === "object") return normalizePage(arg.filters);
+  }
+  return 1;
 }
 
 /**
@@ -1151,6 +1161,8 @@ async function fetchRecentEpisodes(page = 1) {
 
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: results.length >= 20,
       totalPages: 100,
       results,
@@ -1158,6 +1170,8 @@ async function fetchRecentEpisodes(page = 1) {
   } catch (err) {
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: false,
       totalPages: 0,
       results: [],
@@ -1208,6 +1222,8 @@ async function fetchTrending(page = 1) {
 
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: false,
       totalPages: 1,
       results,
@@ -1215,6 +1231,8 @@ async function fetchTrending(page = 1) {
   } catch (err) {
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: false,
       totalPages: 0,
       results: [],
@@ -1242,7 +1260,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "hanimetv",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules,
   subrequestHeaders,
