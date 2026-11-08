@@ -36,7 +36,12 @@ const headerRules = [
     },
   },
   {
-    match: ["gothamnet.vip", "uprising.best"],
+    match: [
+      "gothamnet.vip",
+      "uprising.best",
+      "furiosamedia.vip",
+      "/range/",
+    ],
     headers: {
       Referer: "https://playdrive.vip/",
       Origin: "https://playdrive.vip",
@@ -53,7 +58,12 @@ const headerRules = [
     },
   },
   {
-    match: ["acek-cdn.com", "radiantgroveproduction.cfd"],
+    match: [
+      "acek-cdn.com",
+      "dramiyos-cdn.com",
+      "radiantgroveproduction.cfd",
+      "/hls2/",
+    ],
     headers: {
       Referer: "https://hdstream4u.com/",
       Origin: "https://hdstream4u.com",
@@ -65,14 +75,24 @@ const headerRules = [
 
 const subrequestHeaders = [
   {
-    match: ["gothamnet.vip", "uprising.best"],
+    match: [
+      "gothamnet.vip",
+      "uprising.best",
+      "furiosamedia.vip",
+      "/range/",
+    ],
     headers: {
       Referer: "https://playdrive.vip/",
       Origin: "https://playdrive.vip",
     },
   },
   {
-    match: ["acek-cdn.com", "radiantgroveproduction.cfd"],
+    match: [
+      "acek-cdn.com",
+      "dramiyos-cdn.com",
+      "radiantgroveproduction.cfd",
+      "/hls2/",
+    ],
     headers: {
       Referer: "https://hdstream4u.com/",
       Origin: "https://hdstream4u.com",
@@ -88,8 +108,10 @@ const bypassDomains = [
   "play4u.org",
   "gothamnet.vip",
   "uprising.best",
+  "furiosamedia.vip",
   "hdstream4u.com",
   "acek-cdn.com",
+  "dramiyos-cdn.com",
   "radiantgroveproduction.cfd",
   "pixibay.cc",
   "search.pingora.fyi",
@@ -840,8 +862,32 @@ async function resolvePlayDrive(embedUrl) {
     // Process streams
     if (Array.isArray(playData.streams)) {
       for (const stream of playData.streams) {
-        const m3u8Url = stream.m3u8_url;
+        let m3u8Url = stream.m3u8_url;
         if (!m3u8Url || !m3u8Url.startsWith("http")) continue;
+
+        // Ensure URL contains .m3u8 so StrawVerse routes it to /api/stream/m3u8 instead of segment.ts
+        if (!m3u8Url.includes(".m3u8")) {
+          m3u8Url = m3u8Url.includes("?")
+            ? `${m3u8Url}&ext=.m3u8`
+            : `${m3u8Url}?ext=.m3u8`;
+        }
+
+        // Dynamically register stream and subrequest headers for the specific CDN host
+        try {
+          const streamHost = new URL(m3u8Url).hostname;
+          if (typeof _global.registerStreamHeaders === "function") {
+            _global.registerStreamHeaders(streamHost, {
+              Referer: `${embedOrigin}/`,
+              Origin: embedOrigin,
+            });
+          }
+          if (typeof _global.registerSubrequestHeaders === "function") {
+            _global.registerSubrequestHeaders(streamHost, {
+              Referer: `${embedOrigin}/`,
+              Origin: embedOrigin,
+            });
+          }
+        } catch (_) {}
 
         // Build quality label from available qualities
         const qualityLabels = (stream.qualities || [])
@@ -868,8 +914,30 @@ async function resolvePlayDrive(embedUrl) {
 
     // Fallback: item.video_url
     if (results.length === 0 && playData.item && playData.item.video_url) {
-      const videoUrl = playData.item.video_url;
+      let videoUrl = playData.item.video_url;
       if (videoUrl.startsWith("http")) {
+        if (!videoUrl.includes(".m3u8")) {
+          videoUrl = videoUrl.includes("?")
+            ? `${videoUrl}&ext=.m3u8`
+            : `${videoUrl}?ext=.m3u8`;
+        }
+
+        try {
+          const streamHost = new URL(videoUrl).hostname;
+          if (typeof _global.registerStreamHeaders === "function") {
+            _global.registerStreamHeaders(streamHost, {
+              Referer: `${embedOrigin}/`,
+              Origin: embedOrigin,
+            });
+          }
+          if (typeof _global.registerSubrequestHeaders === "function") {
+            _global.registerSubrequestHeaders(streamHost, {
+              Referer: `${embedOrigin}/`,
+              Origin: embedOrigin,
+            });
+          }
+        } catch (_) {}
+
         results.push({
           url: videoUrl,
           quality: "1080p / 720p (HLS)",
@@ -937,6 +1005,23 @@ async function resolveHDStream4u(fileUrl) {
     const m3u8Url = m3u8Match[1]
       .replace(/\\u0026/g, "&")
       .replace(/\\&/g, "&");
+
+    // Dynamically register stream and subrequest headers for the specific CDN host
+    try {
+      const streamHost = new URL(m3u8Url).hostname;
+      if (typeof _global.registerStreamHeaders === "function") {
+        _global.registerStreamHeaders(streamHost, {
+          Referer: "https://hdstream4u.com/",
+          Origin: "https://hdstream4u.com",
+        });
+      }
+      if (typeof _global.registerSubrequestHeaders === "function") {
+        _global.registerSubrequestHeaders(streamHost, {
+          Referer: "https://hdstream4u.com/",
+          Origin: "https://hdstream4u.com",
+        });
+      }
+    } catch (_) {}
 
     // Extract subtitle VTT URL
     const subtitles = [];
@@ -1249,16 +1334,48 @@ async function fetchRecentEpisodes(page = 1) {
 }
 
 // ────────────────────────────────────────────
+//  Dynamic Stream Headers Hook
+// ────────────────────────────────────────────
+
+/**
+ * Dynamic headers hook used by StrawVerse stream proxy for segments and playlists.
+ */
+function getHeaders(targetUrl) {
+  if (!targetUrl) return {};
+  try {
+    const u = new URL(targetUrl);
+    if (u.pathname.startsWith("/range/") || u.pathname.includes("/range/")) {
+      return {
+        Referer: "https://playdrive.vip/",
+        Origin: "https://playdrive.vip",
+      };
+    }
+    if (
+      u.hostname.includes("acek-cdn") ||
+      u.hostname.includes("dramiyos-cdn") ||
+      u.pathname.includes("/hls2/")
+    ) {
+      return {
+        Referer: "https://hdstream4u.com/",
+        Origin: "https://hdstream4u.com",
+      };
+    }
+  } catch (_) {}
+  return {};
+}
+
+// ────────────────────────────────────────────
 //  Module Export
 // ────────────────────────────────────────────
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
+  getHeaders,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,
