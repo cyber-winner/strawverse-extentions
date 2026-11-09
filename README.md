@@ -21,60 +21,43 @@ Includes scrapers for Asian dramas, movies, multi-language dubbed anime, ecchi, 
 
 ## Extensions
 
-### Asian Dramas & Movies
-
-| Extension | Category | Version | Status | Description |
-|:---|:---:|:---:|:---:|:---|
-| **Kaidrama** | Drama / Movies | `v1.0.1` | `Active` | Korean, Chinese, Japanese, and Thai dramas and movies from kaidrama.com. Plays Vidmoly HLS (`.m3u8`) with MixDrop MP4 fallback. Strict search matching and English subtitles. |
-| **DramaCool** | Drama / Movies | `v1.0.4` | `Active` | Asian dramas, Kdramas, and movies from dramacool9. Plays Vidbasic and Vidmoly HLS streams. Includes strict title search. |
-
----
-
-### Movies & TV Shows
-
-| Extension | Category | Version | Status | Description |
-|:---|:---:|:---:|:---:|:---|
-| **HDHub4u** | Movies / TV | `v1.0.2` | `Active` | Bollywood, Hollywood, South Indian movies, and web series in Hindi Dubbed and Dual Audio from hdhub4u. Supports PlayDrive, Play4U, and HDStream4u multi-quality HLS streams with multi-language audio tracks and subtitles. |
-| **Cinejoy** | Movies / TV | `v1.0.7` | `Active` | Movies and TV shows with multiple video servers, subtitle tracks, and search. |
-
----
-
-### Regional Dubbed Anime
-
-| Extension | Category | Version | Status | Description |
-|:---|:---:|:---:|:---:|:---|
-| **AnimeSalt** | Anime | `v1.0.1` | `Active` | Anime with audio dubbed in Hindi, Tamil, Telugu, Malayalam, English, and Japanese. |
-
----
-
-### Hentai & Ecchi (18+)
-
-> [!NOTE]
-> Can be enabled or disabled individually in StrawVerse settings.
-
-#### Hentai Anime Streams
+### Movies & TV Shows (`extensions/movies-tvshows/`)
 
 | Extension | Version | Status | Description |
 |:---|:---:|:---:|:---|
-| **HentaiTV** | `v1.0.6` | `Active` | Hentai anime streams with subtitle tracks. |
-| **1HAnime** | `v1.0.6` | `Active` | Hentai anime streams with tag search. |
-| **HanimeTV** | `v1.0.3` | `Disabled` | Legacy hentai video scraper (disabled in marketplace). |
+| **Cinejoy** | `v1.0.8` | `Active` | Movies and TV shows streaming with multiple video servers, subtitle tracks, and search. |
+| **DramaCool** | `v1.0.5` | `Active` | Asian dramas, Kdramas, and movies from dramacool9. Plays Vidbasic and Vidmoly HLS streams. Includes strict title search. |
+| **HDHub4u** | `v1.0.3` | `Active` | Bollywood, Hollywood, South Indian movies, and web series in Hindi Dubbed and Dual Audio from hdhub4u. Supports PlayDrive, Play4U, and HDStream4u multi-quality HLS streams with multi-language audio tracks and subtitles. |
+| **Kaidrama** | `v1.0.2` | `Active` | Korean, Chinese, Japanese, and Thai dramas and movies from kaidrama.com. Plays Vidmoly HLS (`.m3u8`) with MixDrop MP4 fallback. Strict search matching and English subtitles. |
 
-#### Hentai Manga & Doujinshi Readers
+---
+
+### Anime Streams (`extensions/Anime/`)
 
 | Extension | Version | Status | Description |
 |:---|:---:|:---:|:---|
-| **Hitomi** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader. |
-| **NHentai.net** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader with tag search. |
-| **NHentai.xxx** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader mirror. |
-| **AsmHentai** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader. |
-| **ImHentai** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader with gallery search. |
-| **HentaiFox** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader. |
-| **HentaiEra** | `v1.0.2` | `Active` | Hentai manga reader with thumbnail previews. |
-| **HentaiForce** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader. |
-| **HentaiRox** | `v1.0.2` | `Active` | Hentai manga and doujinshi reader. |
-| **Hentai2Read** | `v1.0.2` | `Active` | Serialized hentai manga and comic reader. |
-| **SimplyHentai** | `v1.0.2` | `Active` | Hentai doujinshi and manga reader. |
+| **AnimeSalt** | `v1.0.2` | `Active` | Anime with audio dubbed in Hindi, Tamil, Telugu, Malayalam, English, and Japanese. |
+| **1HAnime** | `v1.0.7` | `Active` | Hentai anime video streaming with multi-server and tag search. |
+| **HentaiTV** | `v1.0.7` | `Active` | Hentai anime video streaming with subtitle tracks. |
+| **HanimeTV** | `v1.0.4` | `Disabled` | Legacy hentai video scraper (disabled in marketplace). |
+
+---
+
+### Manga & Doujinshi Readers (`extensions/Manga/`)
+
+| Extension | Version | Status | Description |
+|:---|:---:|:---:|:---|
+| **AsmHentai** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader. |
+| **Hentai2Read** | `v1.0.4` | `Active` | Serialized hentai manga and comic reader. |
+| **HentaiEra** | `v1.0.3` | `Active` | Hentai manga reader with thumbnail previews. |
+| **HentaiForce** | `v1.0.4` | `Active` | Hentai manga and doujinshi reader. |
+| **HentaiFox** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader with tag search. |
+| **HentaiRox** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader. |
+| **Hitomi** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader with tag search. |
+| **ImHentai** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader with gallery search. |
+| **NHentai.net** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader with tag filtering. |
+| **NHentai.xxx** | `v1.0.3` | `Active` | Hentai manga and doujinshi reader mirror. |
+| **SimplyHentai** | `v1.0.3` | `Active` | Hentai doujinshi and manga reader. |
 
 ---
 

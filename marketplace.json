@@ -1,119 +1,140 @@
 {
   "Anime": [
     {
-      "name": "kaidrama",
-      "version": "1.0.2",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "dramacool",
-      "version": "1.0.5",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "cinejoy",
-      "version": "1.0.8",
+      "name": "1hanime",
+      "version": "1.0.7",
+      "description": "Hentai anime video streaming with multi-server and tag search.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "animesalt",
       "version": "1.0.2",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "hentaitv",
-      "version": "1.0.7",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "1hanime",
-      "version": "1.0.7",
+      "description": "Regional multi-language dubbed anime streaming.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "hanimetv",
       "version": "1.0.4",
+      "description": "Legacy hentai video scraper.",
       "MinAppVersion": "11.1.1",
       "disabled": true
     },
     {
-      "name": "hdhub4u",
-      "version": "1.0.3",
+      "name": "hentaitv",
+      "version": "1.0.7",
+      "description": "Hentai anime video streaming with subtitles and search.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     }
   ],
   "Manga": [
     {
-      "name": "nhentaixxx",
-      "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "hentaifox",
-      "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "hentaiera",
-      "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "hentairox",
-      "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
       "name": "asmhentai",
       "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "imhentai",
-      "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "nhentainet",
-      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "hentai2read",
       "version": "1.0.4",
+      "description": "Serialized hentai manga and comic reader.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
-      "name": "simplyhentai",
+      "name": "hentaiera",
       "version": "1.0.3",
-      "MinAppVersion": "11.1.1",
-      "disabled": false
-    },
-    {
-      "name": "hitomi",
-      "version": "1.0.3",
+      "description": "Hentai manga reader with thumbnail previews.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "hentaiforce",
       "version": "1.0.4",
+      "description": "Hentai manga and doujinshi reader.",
       "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "hentaifox",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader with tag search.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "hentairox",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "hitomi",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader with tag search.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "imhentai",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader with gallery search.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "nhentainet",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader with tag filtering.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "nhentaixxx",
+      "version": "1.0.3",
+      "description": "Hentai manga and doujinshi reader mirror.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    },
+    {
+      "name": "simplyhentai",
+      "version": "1.0.3",
+      "description": "Hentai doujinshi and manga reader.",
+      "MinAppVersion": "11.1.1",
+      "disabled": false
+    }
+  ],
+  "movies-tvshows": [
+    {
+      "name": "cinejoy",
+      "version": "1.0.8",
+      "description": "Movies and TV shows streaming with multiple servers and subtitles.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "dramacool",
+      "version": "1.0.5",
+      "description": "Asian dramas, Kdramas, and movies streaming with Vidmoly and Vidbasic.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "hdhub4u",
+      "version": "1.0.3",
+      "description": "Bollywood, Hollywood, and web series streaming in Hindi Dubbed and Dual Audio.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "kaidrama",
+      "version": "1.0.2",
+      "description": "Korean, Chinese, and Asian dramas and movies with English subtitles.",
+      "MinAppVersion": "11.2.0",
       "disabled": false
     }
   ]
