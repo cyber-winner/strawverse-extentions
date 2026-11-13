@@ -25,6 +25,7 @@ Includes scrapers for Asian dramas, movies, multi-language dubbed anime, ecchi, 
 
 | Extension | Version | Status | Description |
 |:---|:---:|:---:|:---|
+| **Bingr** | `v1.0.0` | `Active` | Multi-mirror movies, TV shows, and series streaming across Bingr domains (`bingr.one`, `bingr.st`, etc.) with Orion HLS and Vidly direct stream playback. |
 | **Cinejoy** | `v1.0.8` | `Active` | Movies and TV shows streaming with multiple video servers, subtitle tracks, and search. |
 | **DramaCool** | `v1.0.5` | `Active` | Asian dramas, Kdramas, and movies from dramacool9. Plays Vidbasic and Vidmoly HLS streams. Includes strict title search. |
 | **HDHub4u** | `v1.0.3` | `Active` | Bollywood, Hollywood, South Indian movies, and web series in Hindi Dubbed and Dual Audio from hdhub4u. Supports PlayDrive, Play4U, and HDStream4u multi-quality HLS streams with multi-language audio tracks and subtitles. |

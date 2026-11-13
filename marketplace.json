@@ -110,6 +110,13 @@
   ],
   "movies-tvshows": [
     {
+      "name": "bingr",
+      "version": "1.0.0",
+      "description": "Multi-mirror movie and TV streaming across Bingr domains with high-speed HLS playback.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
       "name": "cinejoy",
       "version": "1.0.8",
       "description": "Movies and TV shows streaming with multiple servers and subtitles.",
