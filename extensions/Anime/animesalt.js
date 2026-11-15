@@ -788,7 +788,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "animesalt",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules,
   subrequestHeaders,

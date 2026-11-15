@@ -9,7 +9,7 @@
     },
     {
       "name": "animesalt",
-      "version": "1.0.2",
+      "version": "1.0.3",
       "description": "Regional multi-language dubbed anime streaming.",
       "MinAppVersion": "11.1.1",
       "disabled": false
@@ -139,7 +139,7 @@
     },
     {
       "name": "hdhub4u",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "description": "Bollywood, Hollywood, and web series streaming in Hindi Dubbed and Dual Audio.",
       "MinAppVersion": "11.2.0",
       "disabled": false

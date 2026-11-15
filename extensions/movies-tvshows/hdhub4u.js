@@ -1362,7 +1362,7 @@ function getHeaders(targetUrl) {
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules,
   subrequestHeaders,
