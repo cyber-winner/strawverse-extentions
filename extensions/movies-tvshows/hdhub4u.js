@@ -2,12 +2,12 @@
  * StrawVerse Extension - HDHub4u Scraper
  * Bollywood, Hollywood, South Indian Movies & TV Shows in Hindi Dubbed, Dual Audio
  * Supports multi-quality HLS streams with multiple audio tracks and subtitles.
- * Based on https://new12.hdhub4u.cl/ and StrawVerse Extension Specification.
+ * Based on https://new14.hdhub4u.cl/ and StrawVerse Extension Specification.
  */
 
 const cheerio = require("cheerio");
 
-const baseUrl = "https://new12.hdhub4u.cl";
+const baseUrl = "https://new14.hdhub4u.cl";
 const searchApiUrl =
   "https://search.pingora.fyi/collections/post/documents/search";
 

@@ -424,6 +424,80 @@ async function resolveNekomuxStream(embedUrl) {
 }
 
 /**
+ * Resolve Abyss player embed into direct MP4 stream sources.
+ * @param {string} embedUrl
+ * @returns {Promise<Array<{ quality: string, url: string, isM3U8: boolean, headers: object }>>}
+ */
+async function resolveAbyssStream(embedUrl) {
+  try {
+    const slugMatch =
+      embedUrl.match(/abyssplayer\.com\/(?:[^\/]+\/)?([A-Za-z0-9_-]+)/) ||
+      embedUrl.match(/[?&]v=([A-Za-z0-9_-]+)/);
+    if (!slugMatch) return [];
+    const slug = slugMatch[1];
+    const playerPageUrl = `https://player.abyssplayer.com/${slug}`;
+    const pageRes = await httpGet(playerPageUrl, {
+      headers: {
+        Referer: "https://animesalt.ro/",
+      },
+      timeout: 8000,
+    });
+    const html = typeof pageRes.data === "string" ? pageRes.data : "";
+    const m = html.match(/const datas = "([^"]+)";/);
+    if (!m) return [];
+
+    const latin1Json = Buffer.from(m[1], "base64").toString("latin1");
+    const rawObj = JSON.parse(latin1Json);
+    if (!rawObj || !rawObj.media) return [];
+
+    const keyStr = `${rawObj.user_id}:${rawObj.slug}:${rawObj.md5_id}`;
+    const md5Hex = crypto.createHash("md5").update(keyStr).digest("hex");
+    const keyBytes = new TextEncoder().encode(md5Hex);
+    const iv = keyBytes.slice(0, 16);
+
+    const subtleKey = await crypto.subtle.importKey(
+      "raw",
+      keyBytes,
+      { name: "AES-CTR", length: 128 },
+      false,
+      ["decrypt"],
+    );
+
+    const inputBytes = new Uint8Array(rawObj.media.length);
+    for (let i = 0; i < rawObj.media.length; i++) {
+      inputBytes[i] = rawObj.media.charCodeAt(i);
+    }
+
+    const decryptedBuf = await crypto.subtle.decrypt(
+      { name: "AES-CTR", counter: iv, length: 128 },
+      subtleKey,
+      inputBytes,
+    );
+
+    const decryptedJson = JSON.parse(new TextDecoder().decode(decryptedBuf));
+    const mp4Sources = decryptedJson?.mp4?.sources || [];
+    const results = [];
+    for (const src of mp4Sources) {
+      if (src.url && src.path) {
+        const streamUrl = `${src.url}/${src.path}`;
+        results.push({
+          quality: src.label || "MP4",
+          url: streamUrl,
+          isM3U8: false,
+          headers: {
+            Referer: "https://player.abyssplayer.com/",
+          },
+        });
+      }
+    }
+    return results;
+  } catch (err) {
+    console.warn("Abyss stream resolution error:", err.message);
+    return [];
+  }
+}
+
+/**
  * Fetch video sources and subtitles for a specific episode.
  * Exposes multi-language dubbed servers (Hindi default, Tamil, Telugu, Malayalam, English, Japanese).
  * @param {string} episodeId
@@ -523,45 +597,78 @@ async function fetchEpisodeSources(episodeId, category = null) {
                 const langName = item.language || "Multi";
                 const linkId = item.link;
                 if (linkId) {
-                  const playerUrl = `https://abyssplayer.com/${linkId}`;
-                  sources.push({
-                    name: `AnimeSalt Abyss (${langName} Dub)`,
-                    quality: `${langName} (Abyss WebPlayer)`,
-                    url: playerUrl,
-                    isM3U8: false,
-                    headers: {
-                      Referer: "https://animesalt.ro/",
-                    },
-                    lang: "dub",
-                    type: "dub",
-                    isDub: true,
-                  });
+                  const resolvedMp4 = await resolveAbyssStream(linkId);
+                  const isDub = !langName.toLowerCase().includes("sub");
+                  const langType = isDub ? "dub" : "sub";
+                  if (resolvedMp4.length > 0) {
+                    for (const s of resolvedMp4) {
+                      sources.push({
+                        name: `AnimeSalt (${langName})`,
+                        quality: `${langName} (${s.quality})`,
+                        url: s.url,
+                        isM3U8: false,
+                        headers: s.headers,
+                        lang: langType,
+                        type: langType,
+                        isDub,
+                      });
+                    }
+                  } else {
+                    const playerUrl = `https://player.abyssplayer.com/${linkId}`;
+                    sources.push({
+                      name: `AnimeSalt Abyss (${langName} Dub)`,
+                      quality: `${langName} (Abyss WebPlayer)`,
+                      url: playerUrl,
+                      isM3U8: false,
+                      headers: { Referer: "https://animesalt.ro/" },
+                      lang: langType,
+                      type: langType,
+                      isDub,
+                    });
+                  }
                 }
               }
             }
           }
         } catch (_) {}
-      } else if (btn.url.includes("abysscdn.com/?v=")) {
-        const vMatch = btn.url.match(/v=([A-Za-z0-9_-]+)/);
-        if (vMatch) {
-          const linkId = vMatch[1];
-          const langName = btn.title || "Dub";
-          const playerUrl = `https://abyssplayer.com/${linkId}`;
-          const isAlreadyAdded = sources.some((s) => s.url === playerUrl);
-          if (!isAlreadyAdded) {
+      } else if (
+        btn.url.includes("abyssplayer.com/") ||
+        btn.url.includes("abysscdn.com/?v=") ||
+        btn.url.includes("player.abyssplayer.com/")
+      ) {
+        const langName = btn.title || "Dub";
+        const isDub = !langName.toLowerCase().includes("sub");
+        const langType = isDub ? "dub" : "sub";
+        const resolvedMp4 = await resolveAbyssStream(btn.url);
+        if (resolvedMp4.length > 0) {
+          for (const s of resolvedMp4) {
             sources.push({
               name: `AnimeSalt (${langName})`,
-              quality: `${langName} (Abyss Player)`,
-              url: playerUrl,
+              quality: `${langName} (${s.quality})`,
+              url: s.url,
               isM3U8: false,
-              headers: {
-                Referer: "https://animesalt.ro/",
-              },
-              lang: langName.toLowerCase().includes("sub") ? "sub" : "dub",
-              type: langName.toLowerCase().includes("sub") ? "sub" : "dub",
-              isDub: !langName.toLowerCase().includes("sub"),
+              headers: s.headers,
+              lang: langType,
+              type: langType,
+              isDub,
             });
           }
+        } else {
+          const vMatch =
+            btn.url.match(/abyssplayer\.com\/(?:[^\/]+\/)?([A-Za-z0-9_-]+)/) ||
+            btn.url.match(/[?&]v=([A-Za-z0-9_-]+)/);
+          const linkId = vMatch ? vMatch[1] : "";
+          const playerUrl = linkId ? `https://player.abyssplayer.com/${linkId}` : btn.url;
+          sources.push({
+            name: `AnimeSalt (${langName})`,
+            quality: `${langName} (Abyss Player)`,
+            url: playerUrl,
+            isM3U8: false,
+            headers: { Referer: "https://animesalt.ro/" },
+            lang: langType,
+            type: langType,
+            isDub,
+          });
         }
       }
     }
