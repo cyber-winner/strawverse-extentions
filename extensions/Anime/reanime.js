@@ -4,27 +4,40 @@
  * Based on https://reanime.cz/ (and https://reanime.to/)
  */
 
+const http = require("http");
+const nodeCrypto = require("crypto");
+
 const baseUrl = "https://reanime.cz";
+const USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
 // Declarative header rules for Re:ANIME, Flixcloud and CDNs
 const headerRules = [
   {
-    match: ["reanime.cz", "reanime.to", "flixcloud.cc", "rundowncdn.top"],
+    match: ["reanime.cz", "reanime.to"],
     headers: {
       Referer: "https://reanime.cz/",
       Origin: "https://reanime.cz",
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+      "User-Agent": USER_AGENT,
+    },
+  },
+  {
+    match: ["flixcloud.cc", "rundowncdn.top", "fetch9.flixcloud.cc"],
+    headers: {
+      Referer: "https://flixcloud.cc/",
+      Origin: "https://flixcloud.cc",
+      "User-Agent": USER_AGENT,
     },
   },
 ];
 
 const subrequestHeaders = [
   {
-    match: ["flixcloud.cc", "rundowncdn.top"],
+    match: ["flixcloud.cc", "rundowncdn.top", "fetch9.flixcloud.cc"],
     headers: {
-      Referer: "https://reanime.cz/",
-      Origin: "https://reanime.cz",
+      Referer: "https://flixcloud.cc/",
+      Origin: "https://flixcloud.cc",
+      "User-Agent": USER_AGENT,
     },
   },
 ];
@@ -34,6 +47,7 @@ const bypassDomains = [
   "reanime.to",
   "flixcloud.cc",
   "rundowncdn.top",
+  "fetch9.flixcloud.cc",
 ];
 
 const _global =
@@ -50,15 +64,18 @@ async function httpGet(url, options = {}) {
       return await _global.axios.get(url, options);
     } catch (err) {
       if (err.response) {
-        return { data: err.response.data, status: err.response.status, headers: err.response.headers };
+        return {
+          data: err.response.data,
+          status: err.response.status,
+          headers: err.response.headers,
+        };
       }
       throw err;
     }
   }
 
   const headers = {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "User-Agent": USER_AGENT,
     Accept: "text/html,application/json,*/*",
     ...(options.headers || {}),
   };
@@ -114,6 +131,327 @@ function parseSvelteData(html) {
   } catch (_) {
     return null;
   }
+}
+
+// Internal Local Stream Decryption Server for MPV
+let localServer = null;
+let localPort = 0;
+const streamCache = new Map();
+
+function cleanOldStreams() {
+  const now = Date.now();
+  for (const [id, item] of streamCache.entries()) {
+    if (now - item.timestamp > 3 * 60 * 60 * 1000) {
+      streamCache.delete(id);
+    }
+  }
+}
+
+function ensureLocalServer() {
+  if (localServer && localPort) return Promise.resolve(localPort);
+
+  return new Promise((resolve, reject) => {
+    localServer = http.createServer((req, res) => {
+      const url = req.url || "";
+      const match = url.match(/^\/reanime\/([^\/]+)\/([^\/\?]+)/);
+      if (!match) {
+        res.writeHead(404);
+        return res.end();
+      }
+
+      const streamId = match[1];
+      const file = match[2];
+      const item = streamCache.get(streamId);
+
+      if (!item) {
+        res.writeHead(404);
+        return res.end("Stream expired or not found");
+      }
+
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+
+      if (file === "master.m3u8") {
+        res.writeHead(200, { "Content-Type": "application/vnd.apple.mpegurl" });
+        const body = item.masterM3u8
+          .replace(/URI="audio\.m3u8"/g, `URI="http://127.0.0.1:${localPort}/reanime/${streamId}/audio.m3u8"`)
+          .replace(/video\.m3u8/g, `http://127.0.0.1:${localPort}/reanime/${streamId}/video.m3u8`);
+        return res.end(body);
+      }
+
+      if (file === "video.m3u8") {
+        res.writeHead(200, { "Content-Type": "application/vnd.apple.mpegurl" });
+        const body = item.videoM3u8.replace(
+          /URI="[^"]+"/g,
+          `URI="http://127.0.0.1:${localPort}/reanime/${streamId}/key.bin"`
+        );
+        return res.end(body);
+      }
+
+      if (file === "audio.m3u8") {
+        res.writeHead(200, { "Content-Type": "application/vnd.apple.mpegurl" });
+        const body = item.audioM3u8.replace(
+          /URI="[^"]+"/g,
+          `URI="http://127.0.0.1:${localPort}/reanime/${streamId}/key.bin"`
+        );
+        return res.end(body);
+      }
+
+      if (file === "key.bin") {
+        res.writeHead(200, { "Content-Type": "application/octet-stream" });
+        return res.end(item.keyBuf);
+      }
+
+      res.writeHead(404);
+      res.end();
+    });
+
+    localServer.on("error", reject);
+    localServer.listen(0, "127.0.0.1", () => {
+      localPort = localServer.address().port;
+      resolve(localPort);
+    });
+  });
+}
+
+// Cryptographic primitives for Flixcloud WebAssembly deobfuscation
+function Rt(t) {
+  const e = atob(t);
+  const a = new Uint8Array(e.length);
+  for (let s = 0; s < e.length; s++) a[s] = e.charCodeAt(s);
+  return a;
+}
+
+const webCrypto =
+  typeof crypto !== "undefined" && crypto.subtle
+    ? crypto
+    : nodeCrypto.webcrypto;
+
+async function ce(t) {
+  const e = new TextEncoder().encode(t);
+  const a = await webCrypto.subtle.digest("SHA-256", e);
+  return Array.from(new Uint8Array(a))
+    .map((c) => c.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function ar(t) {
+  let e = t;
+  for (let s = 0; s < 3; s++) e = await ce(e + s.toString());
+  let a = e;
+  for (let s = 0; s < 3; s++) a = await ce(a + s.toString());
+  return {
+    videoField: `vf_${e.substring(0, 8)}`,
+    keyField: `kf_${e.substring(8, 16)}`,
+    ivField: `ivf_${e.substring(16, 24)}`,
+    containerName: `cd_${e.substring(24, 32)}`,
+    arrayName: `ad_${e.substring(32, 40)}`,
+    objectName: `od_${e.substring(40, 48)}`,
+    tokenField: `${e.substring(48, 64)}_${e.substring(56, 64)}`,
+    keyFrag2Field: `${a.substring(0, 16)}_${a.substring(16, 24)}`,
+  };
+}
+
+function sr(t, e) {
+  const a = t[e.containerName];
+  if (!a) throw new Error("Container not found");
+  const s = a[e.arrayName];
+  if (!s || !Array.isArray(s) || s.length === 0) throw new Error("Array not found");
+  const c = s[0][e.objectName];
+  if (!c) throw new Error("Object not found");
+  const f = c[e.keyField],
+    i = c[e.ivField];
+  if (!f || !i) throw new Error("Missing required fields");
+  return { frag1_b64: f, iv_b64: i };
+}
+
+async function rr(t, e, a, s, g_wasm, E_wasm) {
+  const S = new Uint8Array(E_wasm.buffer);
+  const L = t.length;
+  const T = 1000;
+  const A = T + L;
+  const w = A + L;
+  const z = w + L;
+  S.set(t, T);
+  S.set(e, A);
+  S.set(a, w);
+  g_wasm._s(s);
+  g_wasm._r(T, A, w, z, L);
+  const R = new Uint8Array(L);
+  R.set(S.subarray(z, z + L));
+  return R;
+}
+
+/**
+ * Decrypts Flixcloud embed stream parameters, decrypts HLS playlists,
+ * and caches stream assets for local MPV playback.
+ */
+async function decryptFlixServer(dataLink) {
+  const res = await httpGet(dataLink, {
+    headers: {
+      Referer: "https://reanime.cz/",
+      Origin: "https://reanime.cz",
+    },
+    timeout: 9000,
+  });
+
+  const html = typeof res.data === "string" ? res.data : "";
+  const match = html.match(/kit\.start\([^,]+,\s*[^,]+,\s*(\{[\s\S]*?\})\s*\);/);
+  if (!match) throw new Error("Could not parse Flixcloud embed");
+
+  const dataObj = new Function("return " + match[1])();
+  const nodeData = dataObj.data?.find((d) => d && d.data)?.data;
+  if (!nodeData || !nodeData.obfuscated_crypto_data) {
+    throw new Error("Flixcloud missing obfuscated data");
+  }
+
+  const f_wasm = Rt(nodeData.w_payload);
+  const wasmInstance = (await WebAssembly.instantiate(f_wasm, {})).instance;
+  const g_wasm = wasmInstance.exports;
+  const E_wasm = g_wasm.memory;
+  if (E_wasm.buffer.byteLength === 0) E_wasm.grow(1);
+
+  const t = nodeData.obfuscated_crypto_data;
+  const e = nodeData.obfuscation_seed;
+  const s = await ar(e);
+  const c = sr(t, s);
+  const f = nodeData[s.keyFrag2Field];
+
+  let tokenRef = null;
+  for (const [R_k, u_v] of Object.entries(nodeData)) {
+    if (R_k === s.tokenField && typeof u_v === "string" && u_v.length > 0) {
+      tokenRef = u_v;
+      break;
+    }
+  }
+  if (!tokenRef) throw new Error("Missing token ref");
+
+  const tokenUrl = `https://flixcloud.cc/api/m3u8/${tokenRef}`;
+  const tokenRes = await httpGet(tokenUrl, {
+    headers: { Referer: dataLink, Origin: "https://flixcloud.cc" },
+    timeout: 8000,
+  });
+  const S_token = typeof tokenRes.data === "object" ? tokenRes.data : JSON.parse(tokenRes.data);
+
+  const L_key = (await ce(tokenRef + "vid")).substring(0, 10);
+  const T_key = (await ce(tokenRef + "key")).substring(0, 10);
+  const A = S_token[L_key];
+  const w = S_token[T_key];
+
+  const R = Rt(c.frag1_b64);
+  const u = Rt(f);
+  const h = Rt(w);
+  const k = parseInt(e.substring(0, 8), 16);
+  const H = await rr(R, u, h, k, g_wasm, E_wasm);
+
+  const V = await webCrypto.subtle.importKey("raw", H, { name: "PBKDF2" }, false, ["deriveBits"]);
+  const N = await webCrypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: new TextEncoder().encode(e), iterations: 1000, hash: "SHA-256" },
+    V,
+    256
+  );
+  const Q = new Uint8Array(N);
+  for (let W = 0; W < 32; W++) {
+    Q[W] ^= e.charCodeAt(W % e.length);
+  }
+  const digest = await webCrypto.subtle.digest("SHA-256", Q);
+  const o = new Uint8Array(digest);
+  const v = Rt(c.iv_b64);
+  const d = Rt(A);
+  const l = await webCrypto.subtle.importKey("raw", o, { name: "AES-CBC" }, false, ["decrypt"]);
+  const O = await webCrypto.subtle.decrypt({ name: "AES-CBC", iv: v }, l, d);
+  const masterM3u8Url = new TextDecoder().decode(O);
+
+  const pkOffset = g_wasm._c();
+  const pkBytes = new Uint8Array(E_wasm.buffer).slice(pkOffset, pkOffset + 32);
+  const pkB64 = btoa(String.fromCharCode(...pkBytes));
+  const l_xor = atob(pkB64);
+
+  function decryptM3u8(text) {
+    if (typeof text !== "string") return "";
+    if (text.startsWith("#EXTM3U")) return text;
+    const u_sub = atob(text.trim());
+    const decSubBytes = [];
+    for (let idx = 0; idx < u_sub.length; idx++) {
+      decSubBytes.push(u_sub.charCodeAt(idx) ^ l_xor.charCodeAt(idx % l_xor.length));
+    }
+    return new TextDecoder().decode(new Uint8Array(decSubBytes));
+  }
+
+  // Fetch encrypted master manifest
+  const m3u8Res = await httpGet(masterM3u8Url, {
+    headers: { Referer: "https://flixcloud.cc/", Origin: "https://flixcloud.cc" },
+    timeout: 8000,
+  });
+  const decMaster = decryptM3u8(typeof m3u8Res.data === "string" ? m3u8Res.data : "");
+
+  // Find video subplaylist
+  const lines = decMaster.split("\n");
+  const videoRelPath = lines.find((line) => line && !line.startsWith("#") && line.trim().length > 0);
+  if (!videoRelPath) throw new Error("Could not find video subplaylist");
+  const videoUrl = new URL(videoRelPath, masterM3u8Url).href;
+
+  const videoRes = await httpGet(videoUrl, {
+    headers: { Referer: "https://flixcloud.cc/", Origin: "https://flixcloud.cc" },
+    timeout: 8000,
+  });
+  const decVideo = decryptM3u8(typeof videoRes.data === "string" ? videoRes.data : "");
+
+  // Fetch key.bin
+  const keyUrl = new URL("key.bin", videoUrl).href;
+  const keyRes = await fetch(keyUrl, {
+    headers: { Referer: "https://flixcloud.cc/", Origin: "https://flixcloud.cc", "User-Agent": USER_AGENT },
+  });
+  const keyBuf = Buffer.from(await keyRes.arrayBuffer());
+
+  // Fetch audio subplaylist if separated
+  let decAudio = "";
+  const audioMatch = decMaster.match(/URI="([^"]+)"/);
+  if (audioMatch) {
+    const audioUrl = new URL(audioMatch[1], masterM3u8Url).href;
+    const audioRes = await httpGet(audioUrl, {
+      headers: { Referer: "https://flixcloud.cc/", Origin: "https://flixcloud.cc" },
+      timeout: 8000,
+    });
+    decAudio = decryptM3u8(typeof audioRes.data === "string" ? audioRes.data : "");
+  }
+
+  // Prepare master playlist
+  let masterContent = decMaster;
+  masterContent = masterContent.replace(videoRelPath, "video.m3u8");
+  if (audioMatch) {
+    masterContent = masterContent.replace(audioMatch[1], "audio.m3u8");
+  }
+
+  // Extract subtitle tracks
+  const subtitles = [];
+  if (Array.isArray(nodeData.subtitles)) {
+    for (const sub of nodeData.subtitles) {
+      if (sub.url) {
+        subtitles.push({
+          url: sub.url,
+          lang: sub.language || "English",
+          default: !!sub.default,
+        });
+      }
+    }
+  }
+
+  cleanOldStreams();
+  const port = await ensureLocalServer();
+  const streamId = Math.random().toString(36).substring(2, 10);
+  streamCache.set(streamId, {
+    masterM3u8: masterContent,
+    videoM3u8: decVideo,
+    audioM3u8: decAudio,
+    keyBuf,
+    timestamp: Date.now(),
+  });
+
+  return {
+    streamUrl: `http://127.0.0.1:${port}/reanime/${streamId}/master.m3u8`,
+    subtitles,
+  };
 }
 
 /**
@@ -251,7 +589,7 @@ async function fetchRecentEpisodes(filters = {}) {
       page: page,
       hasNextPage: false,
       totalPages: 1,
-      results: [],
+      results,
     };
   }
 }
@@ -395,7 +733,8 @@ async function fetchEpisode(id, page = 1) {
 
 /**
  * Stream & Subtitle Extraction Engine.
- * Fetches Flixcloud video streaming servers and embedded subtitle tracks.
+ * Fetches Flixcloud video streaming servers, decrypts obfuscated HLS manifests,
+ * and passes direct decrypted streaming playlists and subtitle tracks to MPV.
  */
 async function fetchEpisodeSources(episodeId, category = null) {
   const sources = [];
@@ -435,8 +774,12 @@ async function fetchEpisodeSources(episodeId, category = null) {
   // Register stream headers for StrawVerse player
   if (typeof _global.registerStreamHeaders === "function") {
     _global.registerStreamHeaders("flixcloud.cc", {
-      Referer: "https://reanime.cz/",
-      Origin: "https://reanime.cz",
+      Referer: "https://flixcloud.cc/",
+      Origin: "https://flixcloud.cc",
+    });
+    _global.registerStreamHeaders("fetch9.flixcloud.cc", {
+      Referer: "https://flixcloud.cc/",
+      Origin: "https://flixcloud.cc",
     });
     _global.registerStreamHeaders("rundowncdn.top", {
       Referer: "https://flixcloud.cc/",
@@ -452,51 +795,52 @@ async function fetchEpisodeSources(episodeId, category = null) {
     });
 
     if (flixRes.status === 200 && flixRes.data && Array.isArray(flixRes.data.servers)) {
-      for (const server of flixRes.data.servers) {
-        if (!server.dataLink) continue;
+      const subLanguagesSeen = new Set();
+
+      // Resolve each server into a direct decrypted playable stream
+      const serverTasks = flixRes.data.servers.map(async (server) => {
+        if (!server.dataLink) return null;
 
         const serverLabel = server.serverName || "HD";
         const typeLabel = server.dataType ? `(${server.dataType.toUpperCase()})` : "";
         const hardsubLabel = server.hardsub ? "(Hardsub)" : "";
 
-        sources.push({
-          name: `Re:ANIME ${serverLabel} ${typeLabel} ${hardsubLabel}`.trim(),
-          quality: "1080p / 720p (Flixcloud)",
-          url: server.dataLink,
-          isM3U8: false,
-          headers: {
-            Referer: "https://reanime.cz/",
-            Origin: "https://reanime.cz",
-          },
-        });
-      }
-
-      // Extract subtitle tracks from the first available embed server
-      const firstServer = flixRes.data.servers[0];
-      if (firstServer && firstServer.dataLink) {
         try {
-          const embedRes = await httpGet(firstServer.dataLink, {
-            headers: { Referer: "https://reanime.cz/" },
-            timeout: 6000,
-          });
+          const dec = await decryptFlixServer(server.dataLink);
 
-          const embedHtml = typeof embedRes.data === "string" ? embedRes.data : "";
-          const subMatch = embedHtml.match(/subtitles:\s*(\[[^\]]+\])/);
-          if (subMatch && subMatch[1]) {
-            const subs = new Function("return " + subMatch[1])();
-            if (Array.isArray(subs)) {
-              for (const s of subs) {
-                if (s.url) {
-                  subtitles.push({
-                    url: s.url,
-                    lang: s.language || "English",
-                    default: !!s.default,
-                  });
-                }
+          // Merge subtitle tracks
+          if (Array.isArray(dec.subtitles)) {
+            for (const s of dec.subtitles) {
+              const key = `${s.lang}:${s.url}`;
+              if (!subLanguagesSeen.has(key)) {
+                subLanguagesSeen.add(key);
+                subtitles.push(s);
               }
             }
           }
-        } catch (_) {}
+
+          return {
+            name: `Re:ANIME ${serverLabel} ${typeLabel} ${hardsubLabel}`.trim(),
+            quality: "1080p (Flixcloud)",
+            url: dec.streamUrl,
+            isM3U8: true,
+            headers: {
+              Referer: "https://flixcloud.cc/",
+              Origin: "https://flixcloud.cc",
+              "User-Agent": USER_AGENT,
+            },
+          };
+        } catch (decErr) {
+          console.warn(`Failed to decrypt server ${serverLabel}:`, decErr.message);
+          return null;
+        }
+      });
+
+      const settled = await Promise.allSettled(serverTasks);
+      for (const res of settled) {
+        if (res.status === "fulfilled" && res.value) {
+          sources.push(res.value);
+        }
       }
     }
   } catch (err) {
@@ -508,7 +852,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "reanime",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl,
   headerRules,
   subrequestHeaders,
