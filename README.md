@@ -37,6 +37,7 @@ Includes scrapers for Asian dramas, movies, multi-language dubbed anime, ecchi, 
 
 | Extension | Version | Status | Description |
 |:---|:---:|:---:|:---|
+| **Re:ANIME** | `v1.0.0` | `Active` | High-definition anime streaming with subbed/dubbed multi-server playback from Re:ANIME (`reanime.cz`). |
 | **AnimeSalt** | `v1.0.2` | `Active` | Anime with audio dubbed in Hindi, Tamil, Telugu, Malayalam, English, and Japanese. |
 | **1HAnime** | `v1.0.7` | `Active` | Hentai anime video streaming with multi-server and tag search. |
 | **HentaiTV** | `v1.0.7` | `Active` | Hentai anime video streaming with subtitle tracks. |
