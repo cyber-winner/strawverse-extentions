@@ -1086,17 +1086,22 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.5",
+  version: "1.0.6",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   SearchAnime,
   SearchMovie: SearchAnime,
+  SearchMovies: SearchAnime,
+  searchMovies: SearchAnime,
   AnimeInfo,
   MovieInfo: AnimeInfo,
+  fetchMovieInfo: AnimeInfo,
   fetchEpisode,
   fetchEpisodeSources,
+  fetchMovieSources: fetchEpisodeSources,
   fetchRecentEpisodes,
+  latestMovies: fetchRecentEpisodes,
   fetchTrending: fetchRecentEpisodes,
 };

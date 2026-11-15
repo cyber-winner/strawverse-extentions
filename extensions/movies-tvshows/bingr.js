@@ -704,17 +704,22 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "bingr",
-  version: "1.0.0",
+  version: "1.0.1",
   baseUrl: primaryBaseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   SearchAnime,
   SearchMovie: SearchAnime,
+  SearchMovies: SearchAnime,
+  searchMovies: SearchAnime,
   AnimeInfo,
   MovieInfo: AnimeInfo,
+  fetchMovieInfo: AnimeInfo,
   fetchEpisode,
   fetchEpisodeSources,
+  fetchMovieSources: fetchEpisodeSources,
   fetchRecentEpisodes,
+  latestMovies: fetchRecentEpisodes,
   fetchTrending: fetchRecentEpisodes,
 };

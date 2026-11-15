@@ -450,17 +450,22 @@ async function doFetchEpisodeSources(episodeId) {
 
 module.exports = {
   name: "cinejoy",
-  version: "1.0.8",
+  version: "1.0.9",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   SearchAnime,
   SearchMovie: SearchAnime,
+  SearchMovies: SearchAnime,
+  searchMovies: SearchAnime,
   AnimeInfo,
   MovieInfo: AnimeInfo,
+  fetchMovieInfo: AnimeInfo,
   fetchEpisode,
   fetchEpisodeSources,
+  fetchMovieSources: fetchEpisodeSources,
   fetchRecentEpisodes,
+  latestMovies: fetchRecentEpisodes,
   fetchTrending: fetchRecentEpisodes,
 };

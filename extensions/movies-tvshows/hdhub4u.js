@@ -1362,7 +1362,7 @@ function getHeaders(targetUrl) {
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.4",
+  version: "1.0.5",
   baseUrl,
   headerRules,
   subrequestHeaders,
@@ -1370,10 +1370,15 @@ module.exports = {
   getHeaders,
   SearchAnime,
   SearchMovie: SearchAnime,
+  SearchMovies: SearchAnime,
+  searchMovies: SearchAnime,
   AnimeInfo,
   MovieInfo: AnimeInfo,
+  fetchMovieInfo: AnimeInfo,
   fetchEpisode,
   fetchEpisodeSources,
+  fetchMovieSources: fetchEpisodeSources,
   fetchRecentEpisodes,
+  latestMovies: fetchRecentEpisodes,
   fetchTrending: fetchRecentEpisodes,
 };

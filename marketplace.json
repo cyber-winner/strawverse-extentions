@@ -118,35 +118,72 @@
   "movies-tvshows": [
     {
       "name": "bingr",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "Multi-mirror movie and TV streaming across Bingr domains with high-speed HLS playback.",
       "MinAppVersion": "11.2.0",
       "disabled": false
     },
     {
       "name": "cinejoy",
-      "version": "1.0.8",
+      "version": "1.0.9",
       "description": "Movies and TV shows streaming with multiple servers and subtitles.",
       "MinAppVersion": "11.2.0",
       "disabled": false
     },
     {
       "name": "dramacool",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "description": "Asian dramas, Kdramas, and movies streaming with Vidmoly and Vidbasic.",
       "MinAppVersion": "11.2.0",
       "disabled": false
     },
     {
       "name": "hdhub4u",
-      "version": "1.0.4",
+      "version": "1.0.5",
       "description": "Bollywood, Hollywood, and web series streaming in Hindi Dubbed and Dual Audio.",
       "MinAppVersion": "11.2.0",
       "disabled": false
     },
     {
       "name": "kaidrama",
-      "version": "1.0.2",
+      "version": "1.0.3",
+      "description": "Korean, Chinese, and Asian dramas and movies with English subtitles.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    }
+  ],
+  "Movies": [
+    {
+      "name": "bingr",
+      "version": "1.0.1",
+      "description": "Multi-mirror movie and TV streaming across Bingr domains with high-speed HLS playback.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "cinejoy",
+      "version": "1.0.9",
+      "description": "Movies and TV shows streaming with multiple servers and subtitles.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "dramacool",
+      "version": "1.0.6",
+      "description": "Asian dramas, Kdramas, and movies streaming with Vidmoly and Vidbasic.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "hdhub4u",
+      "version": "1.0.5",
+      "description": "Bollywood, Hollywood, and web series streaming in Hindi Dubbed and Dual Audio.",
+      "MinAppVersion": "11.2.0",
+      "disabled": false
+    },
+    {
+      "name": "kaidrama",
+      "version": "1.0.3",
       "description": "Korean, Chinese, and Asian dramas and movies with English subtitles.",
       "MinAppVersion": "11.2.0",
       "disabled": false

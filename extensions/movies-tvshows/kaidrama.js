@@ -602,8 +602,7 @@ async function AnimeInfo(id) {
   // If passed an episode ID like "northern-storm-2026-episode-1-with-english-subtitle",
   // extract base series slug
   if (cleanId.includes("-episode-")) {
-    const baseSlug = cleanId.replace(/-episode-\d+.*$/i, "");
-    cleanId = `drama/${baseSlug}`;
+    cleanId = cleanId.replace(/-episode-\d+.*$/i, "");
   }
 
   const dramaInfo = {
@@ -622,35 +621,40 @@ async function AnimeInfo(id) {
   };
 
   try {
-    // Attempt primary URL based on normalized ID
-    let targetUrl = `${baseUrl}/${cleanId}/`;
-    let res = await httpGet(targetUrl, {
-      headers: { Referer: `${baseUrl}/` },
-    });
+    const bareSlug = cleanId.replace(/^(drama|movie|tvshow)\//, "");
+    const candidates = Array.from(
+      new Set(
+        [
+          cleanId,
+          `tvshow/${bareSlug}`,
+          `drama/${bareSlug}`,
+          `movie/${bareSlug}`,
+          bareSlug,
+        ].filter(Boolean),
+      ),
+    );
 
-    // If bare slug returned 404, fallback between drama and movie paths
-    if (res.status === 404 && !cleanId.includes("/")) {
-      const dramaUrl = `${baseUrl}/drama/${cleanId}/`;
-      const dramaRes = await httpGet(dramaUrl, { headers: { Referer: `${baseUrl}/` } });
-      if (dramaRes.status === 200) {
-        targetUrl = dramaUrl;
-        cleanId = `drama/${cleanId}`;
-        dramaInfo.id = cleanId;
-        res = dramaRes;
-      } else {
-        const movieUrl = `${baseUrl}/movie/${cleanId}/`;
-        const movieRes = await httpGet(movieUrl, { headers: { Referer: `${baseUrl}/` } });
-        if (movieRes.status === 200) {
-          targetUrl = movieUrl;
-          cleanId = `movie/${cleanId}`;
-          dramaInfo.id = cleanId;
-          dramaInfo.type = "Movie";
-          res = movieRes;
-        }
+    let res = null;
+    let matchedPath = cleanId;
+
+    for (const cand of candidates) {
+      const candidateUrl = `${baseUrl}/${cand}/`;
+      const candRes = await httpGet(candidateUrl, {
+        headers: { Referer: `${baseUrl}/` },
+      });
+      if (candRes.status === 200) {
+        res = candRes;
+        matchedPath = cand;
+        break;
       }
+      if (!res) res = candRes;
     }
 
-    const html = typeof res.data === "string" ? res.data : "";
+    cleanId = matchedPath;
+    dramaInfo.id = cleanId;
+    if (cleanId.startsWith("movie/")) dramaInfo.type = "Movie";
+
+    const html = typeof res?.data === "string" ? res.data : "";
     if (!html) return dramaInfo;
 
     const $ = cheerio.load(html);
@@ -1063,17 +1067,22 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "kaidrama",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   SearchAnime,
   SearchMovie: SearchAnime,
+  SearchMovies: SearchAnime,
+  searchMovies: SearchAnime,
   AnimeInfo,
   MovieInfo: AnimeInfo,
+  fetchMovieInfo: AnimeInfo,
   fetchEpisode,
   fetchEpisodeSources,
+  fetchMovieSources: fetchEpisodeSources,
   fetchRecentEpisodes,
+  latestMovies: fetchRecentEpisodes,
   fetchTrending: fetchRecentEpisodes,
 };
