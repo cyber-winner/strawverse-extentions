@@ -2,7 +2,7 @@
   "Anime": [
     {
       "name": "1hanime",
-      "version": "1.0.7",
+      "version": "1.0.8",
       "description": "Hentai anime video streaming with multi-server and tag search.",
       "MinAppVersion": "11.1.1",
       "disabled": false
@@ -23,7 +23,7 @@
     },
     {
       "name": "hentaitv",
-      "version": "1.0.7",
+      "version": "1.0.8",
       "description": "Hentai anime video streaming with subtitles and search.",
       "MinAppVersion": "11.1.1",
       "disabled": false

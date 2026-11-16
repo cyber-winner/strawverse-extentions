@@ -188,7 +188,7 @@ function installStreamProxyInterceptor() {
             config.httpsAgent = customTlsAgent;
           }
 
-          if (isMediaStream && process.platform !== "android") {
+          if (isMediaStream) {
             config.adapter = nodeHttpsStreamAdapter;
           }
 
@@ -273,7 +273,7 @@ try {
 
 function formatStreamUrl(rawUrl, referer = "https://nhplayer.com/") {
   if (!rawUrl) return "";
-  const port = global.PORT || (process.platform === "android" ? 3459 : 3000);
+  const port = global.PORT || 9545;
   if (port) {
     const refParam = referer ? `&referer=${encodeURIComponent(referer)}` : "";
     return `http://127.0.0.1:${port}/api/stream/segment?url=${encodeURIComponent(rawUrl)}${refParam}`;
@@ -455,22 +455,25 @@ function extractRscPayload(html) {
 function findEmbedUrl(html, rsc, epSlug) {
   if (html) {
     const iframeMatch =
-      html.match(/<iframe[^>]+src="(https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?)"/i) ||
-      html.match(/<iframe[^>]+data-src="(https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?)"/i);
+      html.match(/<iframe[^>]+src=["'](https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?)["']/i) ||
+      html.match(/<iframe[^>]+data-src=["'](https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?)["']/i);
     if (iframeMatch) return iframeMatch[1];
   }
 
   if (rsc && epSlug) {
-    const rscSlugMatch =
-      rsc.match(new RegExp(`"slug":"${epSlug}"[^{}]*"embedUrl":"(https:\\/\\/nhplayer\\.com\\/v\\/[a-zA-Z0-9]+\\/?)"`)) ||
-      rsc.match(new RegExp(`"embedUrl":"(https:\\/\\/nhplayer\\.com\\/v\\/[a-zA-Z0-9]+\\/?)"[^{}]*"slug":"${epSlug}"`));
-    if (rscSlugMatch) return rscSlugMatch[1];
+    const cleanEp = epSlug.replace(/-episode-(\d+)$/, "-$1");
+    const epSlugWithDash = epSlug.includes("-episode-")
+      ? epSlug
+      : epSlug.replace(/-(\d+)$/, "-episode-$1");
+    for (const s of [epSlug, cleanEp, epSlugWithDash]) {
+      const rscSlugMatch =
+        rsc.match(new RegExp(`"slug":"${s}"[^{}]*"embedUrl":"(https:\\/\\/nhplayer\\.com\\/v\\/[a-zA-Z0-9]+\\/?)"`)) ||
+        rsc.match(new RegExp(`"embedUrl":"(https:\\/\\/nhplayer\\.com\\/v\\/[a-zA-Z0-9]+\\/?)"[^{}]*"slug":"${s}"`));
+      if (rscSlugMatch) return rscSlugMatch[1];
+    }
   }
 
-  const fallback =
-    (html ? html.match(/https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?/) : null) ||
-    (rsc ? rsc.match(/https:\/\/nhplayer\.com\/v\/[a-zA-Z0-9]+\/?/) : null);
-  return fallback ? fallback[0] : null;
+  return null;
 }
 
 /**
@@ -682,7 +685,7 @@ async function AnimeInfo(id) {
       rsc.match(/"title":"([^"]+)"/);
 
     if (titleMatch) {
-      const rawTitle = titleMatch[1].replace(/<[^>]+>/g, "").split(/[—\-|]/)[0].trim();
+      const rawTitle = titleMatch[1].replace(/<[^>]+>/g, "").split(/\s+[—–\-|]\s+/)[0].trim();
       if (rawTitle && rawTitle !== "Next.MetadataOutlet" && rawTitle !== "Page not found") {
         animeInfo.title = rawTitle;
       }
@@ -1111,6 +1114,20 @@ async function fetchEpisodeSources(episodeId, category = null) {
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
         },
       },
+      {
+        name: "NHPlayer Direct (1080p)",
+        quality: "1080p (Direct)",
+        url: resolved.streamUrl,
+        rawUrl: resolved.streamUrl,
+        isM3U8: false,
+        type: "mp4",
+        headers: {
+          Referer: "https://nhplayer.com/",
+          Origin: "https://nhplayer.com",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        },
+      },
     ];
 
     const subtitles = resolved.subtitleUrl
@@ -1322,7 +1339,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "hentaitv",
-  version: "1.0.7",
+  version: "1.0.8",
   baseUrl,
   headerRules,
   subrequestHeaders,
