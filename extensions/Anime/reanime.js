@@ -233,6 +233,13 @@ const baseUrl = "https://reanime.cz";
 const USER_AGENT =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
 
+let lastAnimeContext = {
+  animeId: "",
+  anilistId: 0,
+  malId: 0,
+  episodes: [],
+};
+
 // Declarative header rules for Re:ANIME, Flixcloud and CDNs
 const headerRules = [
   {
@@ -919,6 +926,13 @@ async function AnimeInfo(id) {
       }
     }
 
+    lastAnimeContext = {
+      animeId: cleanId,
+      anilistId,
+      malId,
+      episodes,
+    };
+
     return {
       id: cleanId,
       dataId: cleanId,
@@ -968,14 +982,22 @@ async function fetchEpisodeSources(episodeId, category = null) {
   let anilistId = 0;
   let malId = 0;
 
-  const parts = String(episodeId || "").split(":");
+  const rawId = String(episodeId || "").trim();
+  const parts = rawId.split(":");
   if (parts.length >= 2) {
     animeId = parts[0];
     epNum = parseInt(parts[1], 10) || 1;
     anilistId = parseInt(parts[2], 10) || 0;
     malId = parseInt(parts[3], 10) || 0;
+  } else if (/^\d+$/.test(rawId)) {
+    epNum = parseInt(rawId, 10) || 1;
+    if (lastAnimeContext.anilistId) {
+      animeId = lastAnimeContext.animeId;
+      anilistId = lastAnimeContext.anilistId;
+      malId = lastAnimeContext.malId;
+    }
   } else {
-    animeId = String(episodeId || "").trim();
+    animeId = rawId;
   }
 
   // If anilistId was not embedded in episodeId, fetch AnimeInfo to retrieve it
@@ -1042,6 +1064,11 @@ async function fetchEpisodeSources(episodeId, category = null) {
             }
           }
 
+          const reqCat = category ? String(category).toLowerCase() : null;
+          const isDub = (server.dataType || "").toLowerCase() === "dub";
+          const streamType = reqCat || (isDub ? "dub" : "sub");
+          const isDubFlag = reqCat === "sub" ? false : (reqCat === "dub" ? true : isDub);
+
           return {
             name: `Re:ANIME ${serverLabel} ${typeLabel} ${hardsubLabel}`.trim(),
             quality: "1080p (Flixcloud)",
@@ -1052,6 +1079,9 @@ async function fetchEpisodeSources(episodeId, category = null) {
               Origin: "https://flixcloud.cc",
               "User-Agent": USER_AGENT,
             },
+            lang: streamType,
+            type: streamType,
+            isDub: isDubFlag,
           };
         } catch (decErr) {
           console.warn(`Failed to decrypt server ${serverLabel}:`, decErr.message);
@@ -1073,13 +1103,26 @@ async function fetchEpisodeSources(episodeId, category = null) {
   return { sources, subtitles };
 }
 
+async function healId({ oldId, malid, title, folderName }) {
+  try {
+    const q = title || folderName || oldId;
+    if (!q) return null;
+    const searchRes = await SearchAnime(q, 1);
+    if (searchRes && searchRes.results && searchRes.results.length > 0) {
+      return searchRes.results[0].id;
+    }
+  } catch (_) {}
+  return null;
+}
+
 module.exports = {
   name: "reanime",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
+  healId,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,

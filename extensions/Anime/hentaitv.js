@@ -1158,6 +1158,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
       }
     } catch (_) {}
 
+    const streamType = category ? String(category).toLowerCase() : "sub";
     const proxyStreamUrl = formatStreamUrl(resolved.streamUrl, "https://nhplayer.com/");
     const sources = [
       {
@@ -1166,7 +1167,9 @@ async function fetchEpisodeSources(episodeId, category = null) {
         url: proxyStreamUrl,
         rawUrl: resolved.streamUrl,
         isM3U8: false,
-        type: "mp4",
+        type: streamType,
+        lang: streamType,
+        isDub: false,
         headers: {
           Referer: "https://nhplayer.com/",
           Origin: "https://nhplayer.com",
@@ -1180,7 +1183,9 @@ async function fetchEpisodeSources(episodeId, category = null) {
         url: resolved.streamUrl,
         rawUrl: resolved.streamUrl,
         isM3U8: false,
-        type: "mp4",
+        type: streamType,
+        lang: streamType,
+        isDub: false,
         headers: {
           Referer: "https://nhplayer.com/",
           Origin: "https://nhplayer.com",
@@ -1397,14 +1402,27 @@ function getHeaders(url) {
   return null;
 }
 
+async function healId({ oldId, malid, title, folderName }) {
+  try {
+    const q = title || folderName || oldId;
+    if (!q) return null;
+    const searchRes = await SearchAnime(q, 1);
+    if (searchRes && searchRes.results && searchRes.results.length > 0) {
+      return searchRes.results[0].id;
+    }
+  } catch (_) {}
+  return null;
+}
+
 module.exports = {
   name: "hentaitv",
-  version: "1.0.10",
+  version: "1.0.11",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   getHeaders,
+  healId,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,

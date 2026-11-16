@@ -2,35 +2,35 @@
   "Anime": [
     {
       "name": "1hanime",
-      "version": "1.0.10",
+      "version": "1.0.11",
       "description": "Hentai anime video streaming with multi-server and tag search.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "animesalt",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "description": "Regional multi-language dubbed anime streaming.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "hanimetv",
-      "version": "1.0.6",
+      "version": "1.0.7",
       "description": "Legacy hentai video scraper.",
       "MinAppVersion": "11.1.1",
       "disabled": true
     },
     {
       "name": "hentaitv",
-      "version": "1.0.10",
+      "version": "1.0.11",
       "description": "Hentai anime video streaming with subtitles and search.",
       "MinAppVersion": "11.1.1",
       "disabled": false
     },
     {
       "name": "reanime",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "description": "Stream high-definition anime with subbed and dubbed multi-server playback from Re:ANIME.",
       "MinAppVersion": "11.1.1",
       "disabled": false

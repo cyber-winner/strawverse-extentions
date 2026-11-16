@@ -852,7 +852,7 @@ async function fetchEpisode(id, page = 1) {
 /**
  * NHPlayer challenge solver with direct Node HTTPS execution
  */
-async function solveNhPlayer(embedUrl) {
+async function solveNhPlayer(embedUrl, category = null) {
   const cookieJar = {};
   const ua =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -1097,6 +1097,7 @@ async function solveNhPlayer(embedUrl) {
     "User-Agent": ua,
   };
 
+  const streamType = category ? String(category).toLowerCase() : "sub";
   const proxyStreamUrl = formatStreamUrl(finalStreamUrl, "https://nhplayer.com/");
   const sources = [
     {
@@ -1105,7 +1106,9 @@ async function solveNhPlayer(embedUrl) {
       url: proxyStreamUrl,
       rawUrl: finalStreamUrl,
       isM3U8: finalStreamUrl.includes(".m3u8"),
-      type: finalStreamUrl.includes(".m3u8") ? "hls" : "mp4",
+      type: streamType,
+      lang: streamType,
+      isDub: false,
       headers: streamHeaders,
     },
   ];
@@ -1181,7 +1184,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
     );
   }
 
-  return await solveNhPlayer(embedUrl);
+  return await solveNhPlayer(embedUrl, category);
 }
 
 /**
@@ -1318,14 +1321,27 @@ function getHeaders(url) {
   return null;
 }
 
+async function healId({ oldId, malid, title, folderName }) {
+  try {
+    const q = title || folderName || oldId;
+    if (!q) return null;
+    const searchRes = await SearchAnime(q, 1);
+    if (searchRes && searchRes.results && searchRes.results.length > 0) {
+      return searchRes.results[0].id;
+    }
+  } catch (_) {}
+  return null;
+}
+
 module.exports = {
   name: "hanimetv",
-  version: "1.0.6",
+  version: "1.0.7",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
   getHeaders,
+  healId,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,

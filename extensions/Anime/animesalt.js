@@ -258,6 +258,12 @@ try {
 
 const baseUrl = "https://animesalt.ro";
 
+// Last fetched anime context for numeric episodeId fallback
+let lastAnimeContext = {
+  slug: "",
+  episodes: [],
+};
+
 // Declarative header rules for AnimeSalt, NekoMux player and CDN servers
 const headerRules = [
   {
@@ -614,6 +620,10 @@ async function AnimeInfo(id) {
 
     animeInfo.episodes = episodes;
     animeInfo.totalEpisodes = episodes.length;
+    lastAnimeContext = {
+      slug,
+      episodes,
+    };
     return animeInfo;
   } catch (err) {
     console.error("AnimeSalt AnimeInfo error:", err.message);
@@ -755,6 +765,52 @@ async function resolveAbyssStream(embedUrl) {
   }
 }
 
+function resolveCandidateSlugs(id) {
+  const raw = String(id || "").trim();
+  const list = [];
+  if (raw.includes(":")) {
+    const parts = raw.split(":");
+    const aSlug = cleanSlug(parts[0]);
+    const ep = parseInt(parts[1], 10) || 1;
+    list.push(`${aSlug}-1x${ep}`);
+    list.push(`${aSlug}-${ep}`);
+    list.push(`${aSlug}-episode-${ep}`);
+    list.push(aSlug);
+  } else if (/^\d+$/.test(raw)) {
+    const epNum = parseInt(raw, 10);
+    if (lastAnimeContext.episodes && lastAnimeContext.episodes.length > 0) {
+      const match = lastAnimeContext.episodes.find(
+        (e) => Number(e.number) === epNum
+      );
+      if (match && match.id) list.push(cleanSlug(match.id));
+    }
+    if (lastAnimeContext.slug) {
+      list.push(`${lastAnimeContext.slug}-1x${epNum}`);
+      list.push(`${lastAnimeContext.slug}-${epNum}`);
+      list.push(`${lastAnimeContext.slug}-episode-${epNum}`);
+    }
+  } else {
+    const clean = cleanSlug(raw);
+    list.push(clean);
+    const m1 = clean.match(/^(.+)-(\d+)x(\d+)$/);
+    if (m1) {
+      list.push(`${m1[1]}-${m1[3]}`);
+      list.push(`${m1[1]}-episode-${m1[3]}`);
+    }
+    const m2 = clean.match(/^(.+)-episode-(\d+)$/i);
+    if (m2) {
+      list.push(`${m2[1]}-1x${m2[2]}`);
+      list.push(`${m2[1]}-${m2[2]}`);
+    }
+    const m3 = clean.match(/^(.+)-(\d+)$/);
+    if (m3) {
+      list.push(`${m3[1]}-1x${m3[2]}`);
+      list.push(`${m3[1]}-episode-${m3[2]}`);
+    }
+  }
+  return [...new Set(list.filter(Boolean))];
+}
+
 /**
  * Fetch video sources and subtitles for a specific episode.
  * Exposes multi-language dubbed servers (Hindi default, Tamil, Telugu, Malayalam, English, Japanese).
@@ -775,18 +831,38 @@ async function fetchEpisodeSources(episodeId, category = null) {
         global.setDynamicReferer("nekomux.com", "https://animesalt.ro/");
       }
     } catch (_) {}
-    const epSlug = cleanSlug(episodeId);
-    const episodeUrl = `${baseUrl}/${epSlug}/`;
 
-    const res = await httpGet(episodeUrl, {
-      headers: { Referer: `${baseUrl}/` },
-    });
-    const html = typeof res.data === "string" ? res.data : "";
+    const candidateSlugs = resolveCandidateSlugs(episodeId);
+    let html = "";
+    for (const slug of candidateSlugs) {
+      const episodeUrl = `${baseUrl}/${slug}/`;
+      const res = await httpGet(episodeUrl, {
+        headers: { Referer: `${baseUrl}/` },
+      });
+      const dataStr = typeof res.data === "string" ? res.data : "";
+      if (
+        dataStr &&
+        (dataStr.includes("server-button") || dataStr.includes("loadMi"))
+      ) {
+        html = dataStr;
+        break;
+      }
+      if (
+        !html &&
+        dataStr &&
+        !dataStr.includes("Page Not Found") &&
+        !dataStr.includes("404")
+      ) {
+        html = dataStr;
+      }
+    }
+
     if (!html) return { sources: [], subtitles: [] };
 
     const $ = cheerio.load(html);
     const sources = [];
     const subtitles = [];
+    const reqCat = category ? String(category).toLowerCase() : null;
 
     // Register stream headers dynamically
     if (typeof global.registerStreamHeaders === "function") {
@@ -835,6 +911,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
       if (btn.url.includes("player.nekomux.com/episode/")) {
         const hlsUrl = await resolveNekomuxStream(btn.url);
         if (hlsUrl) {
+          const streamType = reqCat || "sub";
           sources.push({
             name: "AnimeSalt NekoMux (Multi-Audio: Hindi / Tamil / Telugu / Eng)",
             quality: "1080p (Multi-Audio HLS - Hindi Default)",
@@ -844,9 +921,9 @@ async function fetchEpisodeSources(episodeId, category = null) {
               Referer: "https://player.nekomux.com/",
               Origin: "https://player.nekomux.com",
             },
-            lang: "dub",
-            type: "dub",
-            isDub: true,
+            lang: streamType,
+            type: streamType,
+            isDub: reqCat === "dub",
           });
           break; // First working NekoMux stream is the complete multi-audio master
         }
@@ -866,9 +943,10 @@ async function fetchEpisodeSources(episodeId, category = null) {
                 const langName = item.language || "Multi";
                 const linkId = item.link;
                 if (linkId) {
-                  const resolvedMp4 = await resolveAbyssStream(linkId);
                   const isDub = !langName.toLowerCase().includes("sub");
-                  const langType = isDub ? "dub" : "sub";
+                  const streamType = reqCat || (isDub ? "dub" : "sub");
+                  const isDubFlag = reqCat === "sub" ? false : (reqCat === "dub" ? true : isDub);
+                  const resolvedMp4 = await resolveAbyssStream(linkId);
                   if (resolvedMp4.length > 0) {
                     for (const s of resolvedMp4) {
                       sources.push({
@@ -877,22 +955,22 @@ async function fetchEpisodeSources(episodeId, category = null) {
                         url: s.url,
                         isM3U8: false,
                         headers: s.headers,
-                        lang: langType,
-                        type: langType,
-                        isDub,
+                        lang: streamType,
+                        type: streamType,
+                        isDub: isDubFlag,
                       });
                     }
                   } else {
                     const playerUrl = `https://player.abyssplayer.com/${linkId}`;
                     sources.push({
-                      name: `AnimeSalt Abyss (${langName} Dub)`,
+                      name: `AnimeSalt (${langName} WebPlayer)`,
                       quality: `${langName} (Abyss WebPlayer)`,
                       url: playerUrl,
                       isM3U8: false,
                       headers: { Referer: "https://animesalt.ro/" },
-                      lang: langType,
-                      type: langType,
-                      isDub,
+                      lang: streamType,
+                      type: streamType,
+                      isDub: isDubFlag,
                     });
                   }
                 }
@@ -907,7 +985,8 @@ async function fetchEpisodeSources(episodeId, category = null) {
       ) {
         const langName = btn.title || "Dub";
         const isDub = !langName.toLowerCase().includes("sub");
-        const langType = isDub ? "dub" : "sub";
+        const streamType = reqCat || (isDub ? "dub" : "sub");
+        const isDubFlag = reqCat === "sub" ? false : (reqCat === "dub" ? true : isDub);
         const resolvedMp4 = await resolveAbyssStream(btn.url);
         if (resolvedMp4.length > 0) {
           for (const s of resolvedMp4) {
@@ -917,9 +996,9 @@ async function fetchEpisodeSources(episodeId, category = null) {
               url: s.url,
               isM3U8: false,
               headers: s.headers,
-              lang: langType,
-              type: langType,
-              isDub,
+              lang: streamType,
+              type: streamType,
+              isDub: isDubFlag,
             });
           }
         } else {
@@ -929,33 +1008,36 @@ async function fetchEpisodeSources(episodeId, category = null) {
           const linkId = vMatch ? vMatch[1] : "";
           const playerUrl = linkId ? `https://player.abyssplayer.com/${linkId}` : btn.url;
           sources.push({
-            name: `AnimeSalt (${langName})`,
-            quality: `${langName} (Abyss Player)`,
+            name: `AnimeSalt (${langName} WebPlayer)`,
+            quality: `${langName} (Abyss WebPlayer)`,
             url: playerUrl,
             isM3U8: false,
             headers: { Referer: "https://animesalt.ro/" },
-            lang: langType,
-            type: langType,
-            isDub,
+            lang: streamType,
+            type: streamType,
+            isDub: isDubFlag,
           });
         }
       }
     }
 
-    // Sort: Multi-Audio HLS first, then Hindi Dub, then other dubs, then subs
+    // Sort: Multi-Audio HLS first, direct MP4 streams, then WebPlayer embeds as fallback
     sources.sort((a, b) => {
       const aName = a.name.toLowerCase();
       const bName = b.name.toLowerCase();
-      const score = (name, isM3u8) => {
+      const aIsDirect = !a.url.includes("player.abyssplayer.com");
+      const bIsDirect = !b.url.includes("player.abyssplayer.com");
+      const score = (name, isM3u8, isDirect) => {
+        if (!isDirect) return 5;
         if (isM3u8) return 100;
-        if (name.includes("hindi")) return 80;
-        if (name.includes("multi")) return 70;
+        if (name.includes("hindi")) return 90;
+        if (name.includes("multi")) return 80;
+        if (name.includes("english")) return 70;
         if (name.includes("tamil")) return 60;
         if (name.includes("telugu")) return 50;
-        if (name.includes("english")) return 40;
-        return 10;
+        return 40;
       };
-      return score(bName, b.isM3U8) - score(aName, a.isM3U8);
+      return score(bName, b.isM3U8, bIsDirect) - score(aName, a.isM3U8, aIsDirect);
     });
 
     return {
@@ -1055,13 +1137,26 @@ async function fetchRecentEpisodes(page = 1) {
   }
 }
 
+async function healId({ oldId, malid, title, folderName }) {
+  try {
+    const q = title || folderName || oldId;
+    if (!q) return null;
+    const searchRes = await SearchAnime(q, 1);
+    if (searchRes && searchRes.results && searchRes.results.length > 0) {
+      return searchRes.results[0].id;
+    }
+  } catch (_) {}
+  return null;
+}
+
 module.exports = {
   name: "animesalt",
-  version: "1.0.5",
+  version: "1.0.6",
   baseUrl,
   headerRules,
   subrequestHeaders,
   bypassDomains,
+  healId,
   SearchAnime,
   SearchMovie: SearchAnime,
   AnimeInfo,
