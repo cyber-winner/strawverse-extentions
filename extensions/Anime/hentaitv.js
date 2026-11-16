@@ -58,22 +58,28 @@ function nodeHttpsStreamAdapter(config) {
         }
       }
 
+      // Strip casing duplicates and problematic headers from bridge/axios
+      for (const k of Object.keys(flatHeaders)) {
+        const lk = k.toLowerCase();
+        if (
+          lk === "user-agent" ||
+          lk === "referer" ||
+          lk === "origin" ||
+          lk === "host" ||
+          lk === "accept-encoding"
+        ) {
+          delete flatHeaders[k];
+        }
+      }
+
       flatHeaders["Host"] = u.hostname;
-      if (!flatHeaders["User-Agent"] && !flatHeaders["user-agent"]) {
-        flatHeaders["User-Agent"] =
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-      }
-      if (!flatHeaders["Referer"] && !flatHeaders["referer"]) {
-        flatHeaders["Referer"] = "https://nhplayer.com/";
-      }
-      if (!flatHeaders["Origin"] && !flatHeaders["origin"]) {
-        flatHeaders["Origin"] = "https://nhplayer.com";
-      }
-      if (!flatHeaders["Accept"] && !flatHeaders["accept"]) {
+      flatHeaders["User-Agent"] =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+      flatHeaders["Referer"] = "https://nhplayer.com/";
+      flatHeaders["Origin"] = "https://nhplayer.com";
+      if (!flatHeaders["Accept"]) {
         flatHeaders["Accept"] = "*/*";
       }
-      delete flatHeaders["Accept-Encoding"];
-      delete flatHeaders["accept-encoding"];
 
       const reqOptions = {
         protocol: u.protocol,
@@ -162,16 +168,24 @@ function nodeHttpsStreamAdapter(config) {
 }
 
 function installStreamProxyInterceptor() {
-  if (!global.axios || global.__nhStreamProxyInterceptorInstalled) return;
-  global.__nhStreamProxyInterceptorInstalled = true;
+  if (!global.axios || !global.axios.interceptors?.request) return;
 
-  global.axios.interceptors.request.use(
+  // Eject any previous interceptor so hot-reloading in StrawVerse always activates latest logic
+  if (global.__nhStreamProxyInterceptorId !== undefined) {
+    try {
+      global.axios.interceptors.request.eject(global.__nhStreamProxyInterceptorId);
+    } catch (_) {}
+  }
+
+  global.__nhStreamProxyInterceptorInstalled = true;
+  global.__nhStreamProxyInterceptorId = global.axios.interceptors.request.use(
     (config) => {
       try {
         const urlStr = String(config.url || "").toLowerCase();
         const isMediaStream =
           urlStr.includes("r2.1hanime.com") ||
-          urlStr.includes("cdn.htstreaming.com");
+          urlStr.includes("cdn.htstreaming.com") ||
+          urlStr.includes(".1hanime.com");
         const isTarget =
           isMediaStream ||
           urlStr.includes("nhplayer.com") ||
@@ -182,7 +196,9 @@ function installStreamProxyInterceptor() {
           urlStr.includes("hanime.tv");
 
         if (isTarget) {
+          // Tell StrawVerse Android nativeAxiosAdapter to NEVER send to Java bridge
           config.strawverseDirectHttp = true;
+          config._forceNativeBridge = false;
 
           if (customTlsAgent) {
             config.httpsAgent = customTlsAgent;
@@ -1339,7 +1355,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "hentaitv",
-  version: "1.0.8",
+  version: "1.0.9",
   baseUrl,
   headerRules,
   subrequestHeaders,
