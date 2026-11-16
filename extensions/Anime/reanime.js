@@ -5,7 +5,187 @@
  */
 
 const http = require("http");
+const https = require("https");
 const nodeCrypto = require("crypto");
+
+function nodeHttpsStreamAdapter(config) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(config.url);
+      const method = (config.method || "GET").toUpperCase();
+
+      const flatHeaders = {};
+      if (config.headers) {
+        if (typeof config.headers.toJSON === "function") {
+          Object.assign(flatHeaders, config.headers.toJSON());
+        } else {
+          Object.assign(flatHeaders, config.headers);
+        }
+      }
+
+      for (const k of Object.keys(flatHeaders)) {
+        const lk = k.toLowerCase();
+        if (
+          lk === "user-agent" ||
+          lk === "referer" ||
+          lk === "origin" ||
+          lk === "host" ||
+          lk === "accept-encoding"
+        ) {
+          delete flatHeaders[k];
+        }
+      }
+
+      flatHeaders["Host"] = u.hostname;
+      flatHeaders["User-Agent"] =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+      const hostLower = u.hostname.toLowerCase();
+      if (
+        hostLower.includes("flixcloud") ||
+        hostLower.includes("rundowncdn") ||
+        hostLower.includes("fetch9")
+      ) {
+        flatHeaders["Referer"] = "https://flixcloud.cc/";
+        flatHeaders["Origin"] = "https://flixcloud.cc";
+      } else if (!flatHeaders["Referer"]) {
+        flatHeaders["Referer"] = "https://reanime.cz/";
+      }
+
+      if (!flatHeaders["Accept"]) {
+        flatHeaders["Accept"] = "*/*";
+      }
+
+      const reqOptions = {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "https:" ? 443 : 80),
+        path: u.pathname + u.search,
+        method: method,
+        headers: flatHeaders,
+      };
+
+      const transport = u.protocol === "https:" ? https : http;
+      const req = transport.request(reqOptions, (res) => {
+        const statusCode = res.statusCode || 200;
+        const resHeaders = res.headers || {};
+
+        if (config.responseType === "stream" || method === "HEAD") {
+          resolve({
+            status: statusCode,
+            statusText: res.statusMessage || "OK",
+            headers: resHeaders,
+            config,
+            request: req,
+            data: res,
+          });
+        } else if (
+          config.responseType === "arraybuffer" ||
+          config.responseType === "buffer"
+        ) {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data: Buffer.concat(chunks),
+            });
+          });
+        } else {
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => (text += chunk));
+          res.on("end", () => {
+            let data = text;
+            try {
+              data = JSON.parse(text);
+            } catch (_) {}
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data,
+            });
+          });
+        }
+      });
+
+      if (config.timeout && config.timeout > 0) {
+        req.setTimeout(config.timeout, () => {
+          req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+        });
+      }
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+
+      if (config.data) {
+        const body =
+          typeof config.data === "string"
+            ? config.data
+            : JSON.stringify(config.data);
+        req.write(body);
+      }
+
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function installStreamProxyInterceptor() {
+  if (!global.axios || !global.axios.interceptors?.request) return;
+
+  if (global.__reanimeInterceptorId !== undefined) {
+    try {
+      global.axios.interceptors.request.eject(global.__reanimeInterceptorId);
+    } catch (_) {}
+  }
+
+  global.__reanimeInterceptorId = global.axios.interceptors.request.use(
+    (config) => {
+      try {
+        const urlStr = String(config.url || "").toLowerCase();
+        const isMediaStream =
+          config.responseType === "stream" ||
+          urlStr.includes("flixcloud") ||
+          urlStr.includes("rundowncdn") ||
+          urlStr.includes("fetch9") ||
+          urlStr.includes(".m3u8") ||
+          urlStr.includes(".ts") ||
+          urlStr.includes(".png");
+
+        const isTarget =
+          isMediaStream ||
+          urlStr.includes("reanime.cz") ||
+          urlStr.includes("reanime.to");
+
+        if (isTarget) {
+          config.strawverseDirectHttp = true;
+          config._forceNativeBridge = false;
+
+          if (isMediaStream) {
+            config.adapter = nodeHttpsStreamAdapter;
+          }
+        }
+      } catch (_) {}
+      return config;
+    },
+    (err) => Promise.reject(err)
+  );
+}
+
+try {
+  installStreamProxyInterceptor();
+} catch (_) {}
 
 const baseUrl = "https://reanime.cz";
 const USER_AGENT =
@@ -737,6 +917,7 @@ async function fetchEpisode(id, page = 1) {
  * and passes direct decrypted streaming playlists and subtitle tracks to MPV.
  */
 async function fetchEpisodeSources(episodeId, category = null) {
+  installStreamProxyInterceptor();
   const sources = [];
   const subtitles = [];
 
@@ -852,7 +1033,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "reanime",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl,
   headerRules,
   subrequestHeaders,

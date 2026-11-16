@@ -6,6 +6,212 @@
 
 const cheerio = require("cheerio");
 const crypto = require("crypto");
+const https = require("https");
+const http = require("http");
+
+function nodeHttpsStreamAdapter(config) {
+  return new Promise((resolve, reject) => {
+    try {
+      const u = new URL(config.url);
+      const method = (config.method || "GET").toUpperCase();
+
+      const flatHeaders = {};
+      if (config.headers) {
+        if (typeof config.headers.toJSON === "function") {
+          Object.assign(flatHeaders, config.headers.toJSON());
+        } else {
+          Object.assign(flatHeaders, config.headers);
+        }
+      }
+
+      for (const k of Object.keys(flatHeaders)) {
+        const lk = k.toLowerCase();
+        if (
+          lk === "user-agent" ||
+          lk === "referer" ||
+          lk === "origin" ||
+          lk === "host" ||
+          lk === "accept-encoding"
+        ) {
+          delete flatHeaders[k];
+        }
+      }
+
+      flatHeaders["Host"] = u.hostname;
+      flatHeaders["User-Agent"] =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+      const hostLower = u.hostname.toLowerCase();
+      if (hostLower.includes("sssrr.org")) {
+        flatHeaders["Referer"] = "https://player.abyssplayer.com/";
+        flatHeaders["Origin"] = "https://player.abyssplayer.com";
+      } else if (hostLower.includes("abyss")) {
+        flatHeaders["Referer"] = "https://animesalt.ro/";
+        flatHeaders["Origin"] = "https://animesalt.ro";
+      } else if (hostLower.includes("nekomux")) {
+        flatHeaders["Referer"] = "https://player.nekomux.com/";
+        flatHeaders["Origin"] = "https://player.nekomux.com";
+      } else if (!flatHeaders["Referer"]) {
+        flatHeaders["Referer"] = "https://animesalt.ro/";
+      }
+
+      if (!flatHeaders["Accept"]) {
+        flatHeaders["Accept"] = "*/*";
+      }
+
+      const reqOptions = {
+        protocol: u.protocol,
+        hostname: u.hostname,
+        port: u.port || (u.protocol === "https:" ? 443 : 80),
+        path: u.pathname + u.search,
+        method: method,
+        headers: flatHeaders,
+      };
+
+      const transport = u.protocol === "https:" ? https : http;
+      const req = transport.request(reqOptions, (res) => {
+        const statusCode = res.statusCode || 200;
+        const resHeaders = res.headers || {};
+
+        if (config.responseType === "stream" || method === "HEAD") {
+          resolve({
+            status: statusCode,
+            statusText: res.statusMessage || "OK",
+            headers: resHeaders,
+            config,
+            request: req,
+            data: res,
+          });
+        } else if (
+          config.responseType === "arraybuffer" ||
+          config.responseType === "buffer"
+        ) {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data: Buffer.concat(chunks),
+            });
+          });
+        } else {
+          let text = "";
+          res.setEncoding("utf8");
+          res.on("data", (chunk) => (text += chunk));
+          res.on("end", () => {
+            let data = text;
+            try {
+              data = JSON.parse(text);
+            } catch (_) {}
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data,
+            });
+          });
+        }
+      });
+
+      if (config.timeout && config.timeout > 0) {
+        req.setTimeout(config.timeout, () => {
+          req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+        });
+      }
+
+      req.on("error", (err) => {
+        reject(err);
+      });
+
+      if (config.data) {
+        const body =
+          typeof config.data === "string"
+            ? config.data
+            : JSON.stringify(config.data);
+        req.write(body);
+      }
+
+      req.end();
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+function installStreamProxyInterceptor() {
+  if (!global.axios || !global.axios.interceptors?.request) return;
+
+  if (global.__animesaltInterceptorId !== undefined) {
+    try {
+      global.axios.interceptors.request.eject(global.__animesaltInterceptorId);
+    } catch (_) {}
+  }
+
+  global.__animesaltInterceptorId = global.axios.interceptors.request.use(
+    (config) => {
+      try {
+        const urlStr = String(config.url || "").toLowerCase();
+        const isMediaStream =
+          config.responseType === "stream" ||
+          urlStr.includes("sssrr.org") ||
+          urlStr.includes("abyss") ||
+          urlStr.includes("nekomux") ||
+          urlStr.includes(".m3u8") ||
+          urlStr.includes(".mp4");
+
+        const isTarget =
+          isMediaStream ||
+          urlStr.includes("animesalt.ro") ||
+          urlStr.includes("abyssplayer.com") ||
+          urlStr.includes("abysscdn.com") ||
+          urlStr.includes("nekomux.com");
+
+        if (isTarget) {
+          config.strawverseDirectHttp = true;
+          config._forceNativeBridge = false;
+
+          if (isMediaStream) {
+            config.adapter = nodeHttpsStreamAdapter;
+          }
+
+          if (urlStr.includes("sssrr.org")) {
+            try {
+              const u = new URL(config.url);
+              if (config.headers?.set) {
+                config.headers.set("Host", u.hostname);
+                config.headers.set(
+                  "User-Agent",
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                );
+                config.headers.set("Referer", "https://player.abyssplayer.com/");
+                config.headers.set("Origin", "https://player.abyssplayer.com");
+              } else {
+                config.headers = config.headers || {};
+                config.headers["Host"] = u.hostname;
+                config.headers["User-Agent"] =
+                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+                config.headers["Referer"] = "https://player.abyssplayer.com/";
+                config.headers["Origin"] = "https://player.abyssplayer.com";
+              }
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+      return config;
+    },
+    (err) => Promise.reject(err)
+  );
+}
+
+try {
+  installStreamProxyInterceptor();
+} catch (_) {}
 
 const baseUrl = "https://animesalt.ro";
 
@@ -479,13 +685,22 @@ async function resolveAbyssStream(embedUrl) {
     const results = [];
     for (const src of mp4Sources) {
       if (src.url && src.path) {
-        const streamUrl = `${src.url}/${src.path}`;
+        let streamUrl = `${src.url}/${src.path}`;
+        if (
+          !streamUrl.match(/\.(mp4|mkv|webm|mov|avi)$/i) &&
+          !streamUrl.includes("#")
+        ) {
+          streamUrl += "#video.mp4";
+        }
         results.push({
           quality: src.label || "MP4",
           url: streamUrl,
           isM3U8: false,
           headers: {
             Referer: "https://player.abyssplayer.com/",
+            Origin: "https://player.abyssplayer.com",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           },
         });
       }
@@ -506,6 +721,17 @@ async function resolveAbyssStream(embedUrl) {
  */
 async function fetchEpisodeSources(episodeId, category = null) {
   try {
+    installStreamProxyInterceptor();
+
+    try {
+      if (typeof global.setDynamicReferer === "function") {
+        global.setDynamicReferer("sssrr.org", "https://player.abyssplayer.com/");
+        global.setDynamicReferer("abyssplayer.com", "https://animesalt.ro/");
+        global.setDynamicReferer("player.abyssplayer.com", "https://animesalt.ro/");
+        global.setDynamicReferer("player.nekomux.com", "https://animesalt.ro/");
+        global.setDynamicReferer("nekomux.com", "https://animesalt.ro/");
+      }
+    } catch (_) {}
     const epSlug = cleanSlug(episodeId);
     const episodeUrl = `${baseUrl}/${epSlug}/`;
 
@@ -788,7 +1014,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "animesalt",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules,
   subrequestHeaders,
