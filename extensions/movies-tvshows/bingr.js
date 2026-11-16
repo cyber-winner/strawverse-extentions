@@ -4,6 +4,236 @@
  * with high-speed HLS stream extraction and dynamic domain fallback.
  */
 
+const https = require("https");
+const http = require("http");
+
+function nodeHttpsStreamAdapter(config) {
+  return new Promise((resolve, reject) => {
+    function executeRequest(currentUrl, redirectCount = 0) {
+      if (redirectCount > 5) {
+        return reject(new Error("Too many redirects"));
+      }
+      try {
+        const u = new URL(currentUrl);
+        const method = (config.method || "GET").toUpperCase();
+
+        const flatHeaders = {};
+        if (config.headers) {
+          if (typeof config.headers.toJSON === "function") {
+            Object.assign(flatHeaders, config.headers.toJSON());
+          } else {
+            Object.assign(flatHeaders, config.headers);
+          }
+        }
+
+        for (const k of Object.keys(flatHeaders)) {
+          const lk = k.toLowerCase();
+          if (
+            lk === "user-agent" ||
+            lk === "referer" ||
+            lk === "origin" ||
+            lk === "host" ||
+            lk === "accept-encoding"
+          ) {
+            delete flatHeaders[k];
+          }
+        }
+
+        flatHeaders["Host"] = u.hostname;
+        flatHeaders["User-Agent"] =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+        const hostLower = u.hostname.toLowerCase();
+        if (hostLower.includes("vidrift")) {
+          flatHeaders["Referer"] = "https://embed.vidrift.in/";
+          flatHeaders["Origin"] = "https://embed.vidrift.in";
+        } else if (hostLower.includes("vidly")) {
+          flatHeaders["Referer"] = "https://vidly.pro/";
+          flatHeaders["Origin"] = "https://vidly.pro";
+        } else if (!flatHeaders["Referer"]) {
+          flatHeaders["Referer"] = "https://bingr.one/";
+        }
+
+        if (!flatHeaders["Accept"]) {
+          flatHeaders["Accept"] = "*/*";
+        }
+
+        const reqOptions = {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port || (u.protocol === "https:" ? 443 : 80),
+          path: u.pathname + u.search,
+          method: method,
+          headers: flatHeaders,
+        };
+
+        const transport = u.protocol === "https:" ? https : http;
+        const req = transport.request(reqOptions, (res) => {
+          const statusCode = res.statusCode || 200;
+          const resHeaders = res.headers || {};
+
+          // Follow redirects automatically
+          if (
+            (statusCode === 301 ||
+              statusCode === 302 ||
+              statusCode === 303 ||
+              statusCode === 307 ||
+              statusCode === 308) &&
+            resHeaders.location
+          ) {
+            res.resume();
+            const nextUrl = new URL(resHeaders.location, currentUrl).toString();
+            return executeRequest(nextUrl, redirectCount + 1);
+          }
+
+          if (config.responseType === "stream" || method === "HEAD") {
+            resolve({
+              status: statusCode,
+              statusText: res.statusMessage || "OK",
+              headers: resHeaders,
+              config,
+              request: req,
+              data: res,
+            });
+          } else if (
+            config.responseType === "arraybuffer" ||
+            config.responseType === "buffer"
+          ) {
+            const chunks = [];
+            let totalLen = 0;
+            res.on("data", (chunk) => {
+              totalLen += chunk.length;
+              if (totalLen <= 50 * 1024 * 1024) {
+                chunks.push(chunk);
+              }
+            });
+            res.on("end", () => {
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data: Buffer.concat(chunks),
+              });
+            });
+          } else {
+            let text = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => (text += chunk));
+            res.on("end", () => {
+              let data = text;
+              try {
+                data = JSON.parse(text);
+              } catch (_) {}
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data,
+              });
+            });
+          }
+        });
+
+        if (config.timeout && config.timeout > 0) {
+          req.setTimeout(config.timeout, () => {
+            req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+          });
+        }
+
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        if (config.data) {
+          const body =
+            typeof config.data === "string"
+              ? config.data
+              : JSON.stringify(config.data);
+          req.write(body);
+        }
+
+        req.end();
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    executeRequest(config.url);
+  });
+}
+
+function installStreamProxyInterceptor() {
+  if (!global.axios || !global.axios.interceptors?.request) return;
+
+  if (global.__strawverseStreamInterceptorId !== undefined) {
+    try {
+      global.axios.interceptors.request.eject(global.__strawverseStreamInterceptorId);
+    } catch (_) {}
+  }
+
+  global.__strawverseStreamInterceptorId = global.axios.interceptors.request.use(
+    (config) => {
+      try {
+        const urlStr = String(config.url || "").toLowerCase();
+        const isMediaStream =
+          config.responseType === "stream" ||
+          urlStr.includes(".m3u8") ||
+          urlStr.includes(".ts") ||
+          urlStr.includes(".m4s") ||
+          urlStr.includes(".mp4") ||
+          urlStr.includes("#video.mp4") ||
+          urlStr.includes("vidrift") ||
+          urlStr.includes("vidly") ||
+          urlStr.includes("vidbolt") ||
+          urlStr.includes("cinezo") ||
+          urlStr.includes("vidy") ||
+          urlStr.includes("rousav") ||
+          urlStr.includes("hakunaymatata") ||
+          urlStr.includes("sssrr.org") ||
+          urlStr.includes("abyss") ||
+          urlStr.includes("nekomux") ||
+          urlStr.includes("flixcloud") ||
+          urlStr.includes("rundowncdn") ||
+          urlStr.includes("fetch9") ||
+          urlStr.includes("r2.1hanime.com") ||
+          urlStr.includes("htstreaming.com") ||
+          urlStr.includes("nhplayer.com") ||
+          urlStr.includes("playdrive") ||
+          urlStr.includes("streamtape") ||
+          urlStr.includes("mixdrop") ||
+          urlStr.includes("vidbasic") ||
+          urlStr.includes("vidmoly");
+
+        const isTarget =
+          isMediaStream ||
+          urlStr.includes("bingr.one") ||
+          urlStr.includes("bingr.st") ||
+          urlStr.includes("bingr.fans") ||
+          urlStr.includes("vidrift.in");
+
+        if (isTarget) {
+          config.strawverseDirectHttp = true;
+          config._forceNativeBridge = false;
+
+          if (isMediaStream) {
+            config.adapter = nodeHttpsStreamAdapter;
+          }
+        }
+      } catch (_) {}
+      return config;
+    },
+    (err) => Promise.reject(err)
+  );
+}
+
+try {
+  installStreamProxyInterceptor();
+} catch (_) {}
+
 const primaryBaseUrl = "https://bingr.one";
 
 // Known mirror domains for automatic failover and load balancing
@@ -526,6 +756,7 @@ async function fetchEpisode(id, page = 1) {
  * and partner streaming servers.
  */
 async function fetchEpisodeSources(episodeId, category = null) {
+  installStreamProxyInterceptor();
   const sources = [];
   const subtitles = [];
 
@@ -704,7 +935,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "bingr",
-  version: "1.0.1",
+  version: "1.0.2",
   baseUrl: primaryBaseUrl,
   headerRules,
   subrequestHeaders,

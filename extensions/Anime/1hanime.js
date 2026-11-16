@@ -45,147 +45,192 @@ try {
 
 function nodeHttpsStreamAdapter(config) {
   return new Promise((resolve, reject) => {
-    try {
-      const u = new URL(config.url);
-      const method = (config.method || "GET").toUpperCase();
+    function executeRequest(currentUrl, redirectCount = 0) {
+      if (redirectCount > 5) {
+        return reject(new Error("Too many redirects"));
+      }
+      try {
+        const u = new URL(currentUrl);
+        const method = (config.method || "GET").toUpperCase();
 
-      const flatHeaders = {};
-      if (config.headers) {
-        if (typeof config.headers.toJSON === "function") {
-          Object.assign(flatHeaders, config.headers.toJSON());
-        } else {
-          Object.assign(flatHeaders, config.headers);
+        const flatHeaders = {};
+        if (config.headers) {
+          if (typeof config.headers.toJSON === "function") {
+            Object.assign(flatHeaders, config.headers.toJSON());
+          } else {
+            Object.assign(flatHeaders, config.headers);
+          }
         }
-      }
 
-      // Strip casing duplicates and problematic headers from bridge/axios
-      for (const k of Object.keys(flatHeaders)) {
-        const lk = k.toLowerCase();
-        if (
-          lk === "user-agent" ||
-          lk === "referer" ||
-          lk === "origin" ||
-          lk === "host" ||
-          lk === "accept-encoding"
-        ) {
-          delete flatHeaders[k];
+        // Strip casing duplicates and problematic headers from bridge/axios
+        for (const k of Object.keys(flatHeaders)) {
+          const lk = k.toLowerCase();
+          if (
+            lk === "user-agent" ||
+            lk === "referer" ||
+            lk === "origin" ||
+            lk === "host" ||
+            lk === "accept-encoding"
+          ) {
+            delete flatHeaders[k];
+          }
         }
-      }
 
-      flatHeaders["Host"] = u.hostname;
-      flatHeaders["User-Agent"] =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-      flatHeaders["Referer"] = "https://nhplayer.com/";
-      flatHeaders["Origin"] = "https://nhplayer.com";
-      if (!flatHeaders["Accept"]) {
-        flatHeaders["Accept"] = "*/*";
-      }
+        flatHeaders["Host"] = u.hostname;
+        flatHeaders["User-Agent"] =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        flatHeaders["Referer"] = "https://nhplayer.com/";
+        flatHeaders["Origin"] = "https://nhplayer.com";
+        if (!flatHeaders["Accept"]) {
+          flatHeaders["Accept"] = "*/*";
+        }
 
-      const reqOptions = {
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port || (u.protocol === "https:" ? 443 : 80),
-        path: u.pathname + u.search,
-        method: method,
-        headers: flatHeaders,
-      };
+        const reqOptions = {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port || (u.protocol === "https:" ? 443 : 80),
+          path: u.pathname + u.search,
+          method: method,
+          headers: flatHeaders,
+        };
 
-      if (customTlsAgent && u.protocol === "https:") {
-        reqOptions.agent = customTlsAgent;
-      }
+        if (customTlsAgent && u.protocol === "https:") {
+          reqOptions.agent = customTlsAgent;
+        }
 
-      const transport = u.protocol === "https:" ? https : http;
-      const req = transport.request(reqOptions, (res) => {
-        const statusCode = res.statusCode || 200;
-        const resHeaders = res.headers || {};
+        const transport = u.protocol === "https:" ? https : http;
+        const req = transport.request(reqOptions, (res) => {
+          const statusCode = res.statusCode || 200;
+          const resHeaders = res.headers || {};
 
-        if (config.responseType === "stream" || method === "HEAD") {
-          resolve({
-            status: statusCode,
-            statusText: res.statusMessage || "OK",
-            headers: resHeaders,
-            config,
-            request: req,
-            data: res,
-          });
-        } else if (config.responseType === "arraybuffer" || config.responseType === "buffer") {
-          const chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on("end", () => {
+          // Follow redirects automatically
+          if (
+            (statusCode === 301 ||
+              statusCode === 302 ||
+              statusCode === 303 ||
+              statusCode === 307 ||
+              statusCode === 308) &&
+            resHeaders.location
+          ) {
+            res.resume();
+            const nextUrl = new URL(resHeaders.location, currentUrl).toString();
+            return executeRequest(nextUrl, redirectCount + 1);
+          }
+
+          if (config.responseType === "stream" || method === "HEAD") {
             resolve({
               status: statusCode,
               statusText: res.statusMessage || "OK",
               headers: resHeaders,
               config,
               request: req,
-              data: Buffer.concat(chunks),
+              data: res,
             });
-          });
-        } else {
-          let text = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk) => (text += chunk));
-          res.on("end", () => {
-            let data = text;
-            try {
-              data = JSON.parse(text);
-            } catch (_) {}
-            resolve({
-              status: statusCode,
-              statusText: res.statusMessage || "OK",
-              headers: resHeaders,
-              config,
-              request: req,
-              data,
+          } else if (config.responseType === "arraybuffer" || config.responseType === "buffer") {
+            const chunks = [];
+            let totalLen = 0;
+            res.on("data", (chunk) => {
+              totalLen += chunk.length;
+              if (totalLen <= 50 * 1024 * 1024) {
+                chunks.push(chunk);
+              }
             });
-          });
-        }
-      });
-
-      if (config.timeout && config.timeout > 0) {
-        req.setTimeout(config.timeout, () => {
-          req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+            res.on("end", () => {
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data: Buffer.concat(chunks),
+              });
+            });
+          } else {
+            let text = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => (text += chunk));
+            res.on("end", () => {
+              let data = text;
+              try {
+                data = JSON.parse(text);
+              } catch (_) {}
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data,
+              });
+            });
+          }
         });
+
+        if (config.timeout && config.timeout > 0) {
+          req.setTimeout(config.timeout, () => {
+            req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+          });
+        }
+
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        if (config.data) {
+          const body =
+            typeof config.data === "string"
+              ? config.data
+              : JSON.stringify(config.data);
+          req.write(body);
+        }
+
+        req.end();
+      } catch (e) {
+        reject(e);
       }
-
-      req.on("error", (err) => {
-        reject(err);
-      });
-
-      if (config.data) {
-        const body =
-          typeof config.data === "string"
-            ? config.data
-            : JSON.stringify(config.data);
-        req.write(body);
-      }
-
-      req.end();
-    } catch (e) {
-      reject(e);
     }
+
+    executeRequest(config.url);
   });
 }
 
 function installStreamProxyInterceptor() {
   if (!global.axios || !global.axios.interceptors?.request) return;
 
-  // Eject any previous interceptor so hot-reloading in StrawVerse always activates latest logic
-  if (global.__nhStreamProxyInterceptorId !== undefined) {
+  if (global.__strawverseStreamInterceptorId !== undefined) {
     try {
-      global.axios.interceptors.request.eject(global.__nhStreamProxyInterceptorId);
+      global.axios.interceptors.request.eject(global.__strawverseStreamInterceptorId);
     } catch (_) {}
   }
 
-  global.__nhStreamProxyInterceptorInstalled = true;
-  global.__nhStreamProxyInterceptorId = global.axios.interceptors.request.use(
+  global.__strawverseStreamInterceptorId = global.axios.interceptors.request.use(
     (config) => {
       try {
         const urlStr = String(config.url || "").toLowerCase();
         const isMediaStream =
+          config.responseType === "stream" ||
+          urlStr.includes(".m3u8") ||
+          urlStr.includes(".ts") ||
+          urlStr.includes(".m4s") ||
+          urlStr.includes(".mp4") ||
+          urlStr.includes("#video.mp4") ||
           urlStr.includes("r2.1hanime.com") ||
           urlStr.includes("cdn.htstreaming.com") ||
-          urlStr.includes(".1hanime.com");
+          urlStr.includes(".1hanime.com") ||
+          urlStr.includes("sssrr.org") ||
+          urlStr.includes("abyss") ||
+          urlStr.includes("nekomux") ||
+          urlStr.includes("flixcloud") ||
+          urlStr.includes("rundowncdn") ||
+          urlStr.includes("fetch9") ||
+          urlStr.includes("playdrive") ||
+          urlStr.includes("streamtape") ||
+          urlStr.includes("mixdrop") ||
+          urlStr.includes("vidbasic") ||
+          urlStr.includes("vidmoly") ||
+          urlStr.includes("vidrift") ||
+          urlStr.includes("vidly");
+
         const isTarget =
           isMediaStream ||
           urlStr.includes("nhplayer.com") ||
@@ -196,7 +241,6 @@ function installStreamProxyInterceptor() {
           urlStr.includes("hanime.tv");
 
         if (isTarget) {
-          // Tell StrawVerse Android nativeAxiosAdapter to NEVER send to Java bridge
           config.strawverseDirectHttp = true;
           config._forceNativeBridge = false;
 
@@ -1275,7 +1319,7 @@ function getHeaders(url) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.9",
+  version: "1.0.10",
   baseUrl,
   aliasUrl,
   headerRules,

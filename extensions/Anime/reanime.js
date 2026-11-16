@@ -10,158 +10,200 @@ const nodeCrypto = require("crypto");
 
 function nodeHttpsStreamAdapter(config) {
   return new Promise((resolve, reject) => {
-    try {
-      const u = new URL(config.url);
-      const method = (config.method || "GET").toUpperCase();
-
-      const flatHeaders = {};
-      if (config.headers) {
-        if (typeof config.headers.toJSON === "function") {
-          Object.assign(flatHeaders, config.headers.toJSON());
-        } else {
-          Object.assign(flatHeaders, config.headers);
-        }
+    function executeRequest(currentUrl, redirectCount = 0) {
+      if (redirectCount > 5) {
+        return reject(new Error("Too many redirects"));
       }
+      try {
+        const u = new URL(currentUrl);
+        const method = (config.method || "GET").toUpperCase();
 
-      for (const k of Object.keys(flatHeaders)) {
-        const lk = k.toLowerCase();
+        const flatHeaders = {};
+        if (config.headers) {
+          if (typeof config.headers.toJSON === "function") {
+            Object.assign(flatHeaders, config.headers.toJSON());
+          } else {
+            Object.assign(flatHeaders, config.headers);
+          }
+        }
+
+        for (const k of Object.keys(flatHeaders)) {
+          const lk = k.toLowerCase();
+          if (
+            lk === "user-agent" ||
+            lk === "referer" ||
+            lk === "origin" ||
+            lk === "host" ||
+            lk === "accept-encoding"
+          ) {
+            delete flatHeaders[k];
+          }
+        }
+
+        flatHeaders["Host"] = u.hostname;
+        flatHeaders["User-Agent"] =
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+
+        const hostLower = u.hostname.toLowerCase();
         if (
-          lk === "user-agent" ||
-          lk === "referer" ||
-          lk === "origin" ||
-          lk === "host" ||
-          lk === "accept-encoding"
+          hostLower.includes("flixcloud") ||
+          hostLower.includes("rundowncdn") ||
+          hostLower.includes("fetch9")
         ) {
-          delete flatHeaders[k];
+          flatHeaders["Referer"] = "https://flixcloud.cc/";
+          flatHeaders["Origin"] = "https://flixcloud.cc";
+        } else if (!flatHeaders["Referer"]) {
+          flatHeaders["Referer"] = "https://reanime.cz/";
         }
-      }
 
-      flatHeaders["Host"] = u.hostname;
-      flatHeaders["User-Agent"] =
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
+        if (!flatHeaders["Accept"]) {
+          flatHeaders["Accept"] = "*/*";
+        }
 
-      const hostLower = u.hostname.toLowerCase();
-      if (
-        hostLower.includes("flixcloud") ||
-        hostLower.includes("rundowncdn") ||
-        hostLower.includes("fetch9")
-      ) {
-        flatHeaders["Referer"] = "https://flixcloud.cc/";
-        flatHeaders["Origin"] = "https://flixcloud.cc";
-      } else if (!flatHeaders["Referer"]) {
-        flatHeaders["Referer"] = "https://reanime.cz/";
-      }
+        const reqOptions = {
+          protocol: u.protocol,
+          hostname: u.hostname,
+          port: u.port || (u.protocol === "https:" ? 443 : 80),
+          path: u.pathname + u.search,
+          method: method,
+          headers: flatHeaders,
+        };
 
-      if (!flatHeaders["Accept"]) {
-        flatHeaders["Accept"] = "*/*";
-      }
+        const transport = u.protocol === "https:" ? https : http;
+        const req = transport.request(reqOptions, (res) => {
+          const statusCode = res.statusCode || 200;
+          const resHeaders = res.headers || {};
 
-      const reqOptions = {
-        protocol: u.protocol,
-        hostname: u.hostname,
-        port: u.port || (u.protocol === "https:" ? 443 : 80),
-        path: u.pathname + u.search,
-        method: method,
-        headers: flatHeaders,
-      };
+          // Follow redirects automatically
+          if (
+            (statusCode === 301 ||
+              statusCode === 302 ||
+              statusCode === 303 ||
+              statusCode === 307 ||
+              statusCode === 308) &&
+            resHeaders.location
+          ) {
+            res.resume();
+            const nextUrl = new URL(resHeaders.location, currentUrl).toString();
+            return executeRequest(nextUrl, redirectCount + 1);
+          }
 
-      const transport = u.protocol === "https:" ? https : http;
-      const req = transport.request(reqOptions, (res) => {
-        const statusCode = res.statusCode || 200;
-        const resHeaders = res.headers || {};
-
-        if (config.responseType === "stream" || method === "HEAD") {
-          resolve({
-            status: statusCode,
-            statusText: res.statusMessage || "OK",
-            headers: resHeaders,
-            config,
-            request: req,
-            data: res,
-          });
-        } else if (
-          config.responseType === "arraybuffer" ||
-          config.responseType === "buffer"
-        ) {
-          const chunks = [];
-          res.on("data", (chunk) => chunks.push(chunk));
-          res.on("end", () => {
+          if (config.responseType === "stream" || method === "HEAD") {
             resolve({
               status: statusCode,
               statusText: res.statusMessage || "OK",
               headers: resHeaders,
               config,
               request: req,
-              data: Buffer.concat(chunks),
+              data: res,
             });
-          });
-        } else {
-          let text = "";
-          res.setEncoding("utf8");
-          res.on("data", (chunk) => (text += chunk));
-          res.on("end", () => {
-            let data = text;
-            try {
-              data = JSON.parse(text);
-            } catch (_) {}
-            resolve({
-              status: statusCode,
-              statusText: res.statusMessage || "OK",
-              headers: resHeaders,
-              config,
-              request: req,
-              data,
+          } else if (
+            config.responseType === "arraybuffer" ||
+            config.responseType === "buffer"
+          ) {
+            const chunks = [];
+            let totalLen = 0;
+            res.on("data", (chunk) => {
+              totalLen += chunk.length;
+              if (totalLen <= 50 * 1024 * 1024) {
+                chunks.push(chunk);
+              }
             });
-          });
-        }
-      });
-
-      if (config.timeout && config.timeout > 0) {
-        req.setTimeout(config.timeout, () => {
-          req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+            res.on("end", () => {
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data: Buffer.concat(chunks),
+              });
+            });
+          } else {
+            let text = "";
+            res.setEncoding("utf8");
+            res.on("data", (chunk) => (text += chunk));
+            res.on("end", () => {
+              let data = text;
+              try {
+                data = JSON.parse(text);
+              } catch (_) {}
+              resolve({
+                status: statusCode,
+                statusText: res.statusMessage || "OK",
+                headers: resHeaders,
+                config,
+                request: req,
+                data,
+              });
+            });
+          }
         });
+
+        if (config.timeout && config.timeout > 0) {
+          req.setTimeout(config.timeout, () => {
+            req.destroy(new Error(`timeout of ${config.timeout}ms exceeded`));
+          });
+        }
+
+        req.on("error", (err) => {
+          reject(err);
+        });
+
+        if (config.data) {
+          const body =
+            typeof config.data === "string"
+              ? config.data
+              : JSON.stringify(config.data);
+          req.write(body);
+        }
+
+        req.end();
+      } catch (e) {
+        reject(e);
       }
-
-      req.on("error", (err) => {
-        reject(err);
-      });
-
-      if (config.data) {
-        const body =
-          typeof config.data === "string"
-            ? config.data
-            : JSON.stringify(config.data);
-        req.write(body);
-      }
-
-      req.end();
-    } catch (e) {
-      reject(e);
     }
+
+    executeRequest(config.url);
   });
 }
 
 function installStreamProxyInterceptor() {
   if (!global.axios || !global.axios.interceptors?.request) return;
 
-  if (global.__reanimeInterceptorId !== undefined) {
+  if (global.__strawverseStreamInterceptorId !== undefined) {
     try {
-      global.axios.interceptors.request.eject(global.__reanimeInterceptorId);
+      global.axios.interceptors.request.eject(global.__strawverseStreamInterceptorId);
     } catch (_) {}
   }
 
-  global.__reanimeInterceptorId = global.axios.interceptors.request.use(
+  global.__strawverseStreamInterceptorId = global.axios.interceptors.request.use(
     (config) => {
       try {
         const urlStr = String(config.url || "").toLowerCase();
         const isMediaStream =
           config.responseType === "stream" ||
+          urlStr.includes(".m3u8") ||
+          urlStr.includes(".ts") ||
+          urlStr.includes(".m4s") ||
+          urlStr.includes(".mp4") ||
+          urlStr.includes("#video.mp4") ||
+          urlStr.includes("sssrr.org") ||
+          urlStr.includes("abyss") ||
+          urlStr.includes("nekomux") ||
           urlStr.includes("flixcloud") ||
           urlStr.includes("rundowncdn") ||
           urlStr.includes("fetch9") ||
-          urlStr.includes(".m3u8") ||
-          urlStr.includes(".ts") ||
-          urlStr.includes(".png");
+          urlStr.includes("r2.1hanime.com") ||
+          urlStr.includes("htstreaming.com") ||
+          urlStr.includes("nhplayer.com") ||
+          urlStr.includes("playdrive") ||
+          urlStr.includes("streamtape") ||
+          urlStr.includes("mixdrop") ||
+          urlStr.includes("vidbasic") ||
+          urlStr.includes("vidmoly") ||
+          urlStr.includes("vidrift") ||
+          urlStr.includes("vidly");
 
         const isTarget =
           isMediaStream ||
@@ -1033,7 +1075,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "reanime",
-  version: "1.0.2",
+  version: "1.0.3",
   baseUrl,
   headerRules,
   subrequestHeaders,
