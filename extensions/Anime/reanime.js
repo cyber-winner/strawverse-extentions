@@ -813,31 +813,36 @@ async function decryptFlixServer(dataLink) {
   };
 }
 
+// In-memory cursor map for sequential home feed pagination
+const recentCursorMap = new Map();
+recentCursorMap.set(1, null);
+
 /**
  * Search anime across Re:ANIME catalog with pagination.
+ * Supports keyword search or full catalog browsing when query is empty.
  */
 async function SearchAnime(query, filters = {}) {
   const page = normalizePage(filters);
-  const cleanQuery = typeof query === "string" ? query.trim() : String(query || "");
-
-  if (!cleanQuery) {
-    return { currentPage: 1, current_page: 1, page: 1, hasNextPage: false, totalPages: 1, results: [] };
-  }
+  const cleanQuery = typeof query === "string" ? query.trim() : String(query || "").trim();
 
   try {
-    const limit = 20;
+    const limit = 36;
     const offset = (page - 1) * limit;
-    const searchUrl = `${baseUrl}/search?q=${encodeURIComponent(cleanQuery)}&offset=${offset}`;
+    const searchUrl = cleanQuery
+      ? `${baseUrl}/api/v1/search?q=${encodeURIComponent(cleanQuery)}&limit=${limit}&offset=${offset}`
+      : `${baseUrl}/api/v1/search?limit=${limit}&offset=${offset}`;
 
     const res = await httpGet(searchUrl, {
       headers: { Referer: `${baseUrl}/` },
       timeout: 9000,
     });
 
-    const html = typeof res.data === "string" ? res.data : "";
-    const parsed = parseSvelteData(html);
-    const pageData = parsed?.data?.find((d) => d?.data?.initial);
-    const rawResults = pageData?.data?.initial?.results || [];
+    const data =
+      typeof res.data === "object" && res.data !== null
+        ? res.data
+        : JSON.parse(res.data || "{}");
+    const rawResults = Array.isArray(data?.results) ? data.results : [];
+    const total = typeof data?.total === "number" ? data.total : rawResults.length;
 
     const results = rawResults.map((item) => {
       const title =
@@ -855,6 +860,7 @@ async function SearchAnime(query, filters = {}) {
 
       const year = item.season_year ? String(item.season_year) : "";
       const rating = item.average_score ? (item.average_score / 10).toFixed(1) : null;
+      const subDub = item.dubbed && item.subbed ? "Both" : item.dubbed ? "Dub" : "Sub";
 
       return {
         id: item.anime_id,
@@ -864,12 +870,12 @@ async function SearchAnime(query, filters = {}) {
         rating,
         status: item.status || "Unknown",
         episodes: item.episodes || 0,
-        subDub: item.dubbed && item.subbed ? "Both" : item.dubbed ? "Dub" : "Sub",
+        subDub,
       };
     });
 
-    const hasNextPage = rawResults.length >= limit;
-    const totalPages = hasNextPage ? page + 1 : page;
+    const totalPages = Math.ceil(total / limit) || 1;
+    const hasNextPage = offset + results.length < total;
 
     return {
       currentPage: page,
@@ -893,23 +899,65 @@ async function SearchAnime(query, filters = {}) {
 }
 
 /**
- * Fetch latest aired anime episodes for home feed.
+ * Fetch latest aired anime episodes for home feed with continuous pagination.
  */
 async function fetchRecentEpisodes(filters = {}) {
   const page = normalizePage(filters);
+  const limit = 36;
 
   try {
-    const res = await httpGet(`${baseUrl}/home`, {
+    let cursor = recentCursorMap.get(page) || null;
+
+    // If page > 1 and cursor not cached, sequentially advance to target page
+    if (!cursor && page > 1) {
+      let currentP = 1;
+      let cur = null;
+      while (currentP < page) {
+        const nextP = currentP + 1;
+        if (recentCursorMap.has(nextP)) {
+          cur = recentCursorMap.get(nextP);
+          currentP = nextP;
+          continue;
+        }
+        const stepUrl = cur
+          ? `${baseUrl}/api/v1/home/latest-aired?limit=${limit}&cursor=${encodeURIComponent(cur)}`
+          : `${baseUrl}/api/v1/home/latest-aired?limit=${limit}`;
+        const stepRes = await httpGet(stepUrl, {
+          headers: { Referer: `${baseUrl}/` },
+          timeout: 8000,
+        });
+        const stepData =
+          typeof stepRes.data === "object" && stepRes.data !== null
+            ? stepRes.data
+            : JSON.parse(stepRes.data || "{}");
+        if (!stepData?.next_cursor) break;
+        cur = stepData.next_cursor;
+        recentCursorMap.set(nextP, cur);
+        currentP = nextP;
+      }
+      cursor = cur;
+    }
+
+    const apiUrl = cursor
+      ? `${baseUrl}/api/v1/home/latest-aired?limit=${limit}&cursor=${encodeURIComponent(cursor)}`
+      : `${baseUrl}/api/v1/home/latest-aired?limit=${limit}`;
+
+    const res = await httpGet(apiUrl, {
       headers: { Referer: `${baseUrl}/` },
       timeout: 8000,
     });
 
-    const html = typeof res.data === "string" ? res.data : "";
-    const parsed = parseSvelteData(html);
-    const pageData = parsed?.data?.find((d) => d?.data?.homeData);
-    const latestAired = pageData?.data?.homeData?.latest_aired || [];
+    const data =
+      typeof res.data === "object" && res.data !== null
+        ? res.data
+        : JSON.parse(res.data || "{}");
+    const rawList = Array.isArray(data?.data) ? data.data : [];
 
-    const results = latestAired.map((item) => {
+    if (data?.next_cursor) {
+      recentCursorMap.set(page + 1, data.next_cursor);
+    }
+
+    const results = rawList.map((item) => {
       const title =
         item.title?.english ||
         item.title?.romaji ||
@@ -923,21 +971,31 @@ async function fetchRecentEpisodes(filters = {}) {
         item.cover_image?.medium ||
         null;
 
+      const year = item.season_year ? String(item.season_year) : "";
+      const rating = item.average_score ? (item.average_score / 10).toFixed(1) : null;
+      const subDub = item.dubbed && item.subbed ? "Both" : item.dubbed ? "Dub" : "Sub";
+
       return {
         id: item.anime_id,
         title,
         image,
-        episodes: item.episodes || 0,
-        subDub: item.dubbed && item.subbed ? "Both" : item.dubbed ? "Dub" : "Sub",
+        year,
+        rating,
+        status: item.status || "Unknown",
+        episodes: item.episodes || (item.episode?.episode_number ? item.episode.episode_number : 0),
+        subDub,
       };
     });
+
+    const hasNextPage = Boolean(data?.has_more);
+    const totalPages = hasNextPage ? page + 1 : page;
 
     return {
       currentPage: page,
       current_page: page,
       page: page,
-      hasNextPage: false,
-      totalPages: 1,
+      hasNextPage,
+      totalPages,
       results,
     };
   } catch (err) {
@@ -948,7 +1006,83 @@ async function fetchRecentEpisodes(filters = {}) {
       page: page,
       hasNextPage: false,
       totalPages: 1,
+      results: [],
+    };
+  }
+}
+
+/**
+ * Fetch trending / popular anime with full catalog pagination.
+ */
+async function fetchTrending(filters = {}) {
+  const page = normalizePage(filters);
+  const limit = 36;
+  const offset = (page - 1) * limit;
+
+  try {
+    const url = `${baseUrl}/api/v1/search?sort=popularity_desc&limit=${limit}&offset=${offset}`;
+    const res = await httpGet(url, {
+      headers: { Referer: `${baseUrl}/` },
+      timeout: 9000,
+    });
+
+    const data =
+      typeof res.data === "object" && res.data !== null
+        ? res.data
+        : JSON.parse(res.data || "{}");
+    const rawResults = Array.isArray(data?.results) ? data.results : [];
+    const total = typeof data?.total === "number" ? data.total : rawResults.length;
+
+    const results = rawResults.map((item) => {
+      const title =
+        item.title?.english ||
+        item.title?.romaji ||
+        item.title?.user_preferred ||
+        item.title?.native ||
+        "Unknown Title";
+
+      const image =
+        item.cover_image?.large ||
+        item.cover_image?.extra_large ||
+        item.cover_image?.medium ||
+        null;
+
+      const year = item.season_year ? String(item.season_year) : "";
+      const rating = item.average_score ? (item.average_score / 10).toFixed(1) : null;
+      const subDub = item.dubbed && item.subbed ? "Both" : item.dubbed ? "Dub" : "Sub";
+
+      return {
+        id: item.anime_id,
+        title,
+        image,
+        year,
+        rating,
+        status: item.status || "Unknown",
+        episodes: item.episodes || 0,
+        subDub,
+      };
+    });
+
+    const totalPages = Math.ceil(total / limit) || 1;
+    const hasNextPage = offset + results.length < total;
+
+    return {
+      currentPage: page,
+      current_page: page,
+      page: page,
+      hasNextPage,
+      totalPages,
       results,
+    };
+  } catch (err) {
+    console.error("Re:ANIME fetchTrending error:", err.message);
+    return {
+      currentPage: page,
+      current_page: page,
+      page: page,
+      hasNextPage: false,
+      totalPages: 1,
+      results: [],
     };
   }
 }
@@ -960,16 +1094,32 @@ async function AnimeInfo(id) {
   const cleanId = String(id || "").trim();
 
   try {
-    const watchUrl = `${baseUrl}/watch/${cleanId}`;
-    const res = await httpGet(watchUrl, {
-      headers: { Referer: `${baseUrl}/` },
-      timeout: 9000,
-    });
+    let anime = null;
 
-    const html = typeof res.data === "string" ? res.data : "";
-    const parsed = parseSvelteData(html);
-    const pageData = parsed?.data?.find((d) => d?.data?.anime);
-    const anime = pageData?.data?.anime;
+    // 1. Try fast direct REST API first
+    try {
+      const apiRes = await httpGet(`${baseUrl}/api/v1/anime/${encodeURIComponent(cleanId)}`, {
+        headers: { Referer: `${baseUrl}/` },
+        timeout: 7000,
+      });
+      if (apiRes.status === 200 && apiRes.data && (apiRes.data.anime_id || apiRes.data.anilist_id)) {
+        anime = typeof apiRes.data === "object" ? apiRes.data : JSON.parse(apiRes.data);
+      }
+    } catch (_) {}
+
+    // 2. Fallback to SvelteKit HTML scraping if API was unavailable
+    if (!anime) {
+      const watchUrl = `${baseUrl}/watch/${cleanId}`;
+      const res = await httpGet(watchUrl, {
+        headers: { Referer: `${baseUrl}/` },
+        timeout: 9000,
+      });
+
+      const html = typeof res.data === "string" ? res.data : "";
+      const parsed = parseSvelteData(html);
+      const pageData = parsed?.data?.find((d) => d?.data?.anime);
+      anime = pageData?.data?.anime;
+    }
 
     if (!anime) {
       throw new Error(`Failed to extract anime data for ${cleanId}`);
@@ -1247,7 +1397,7 @@ async function healId({ oldId, malid, title, folderName }) {
 
 module.exports = {
   name: "reanime",
-  version: "1.0.5",
+  version: "1.0.6",
   baseUrl,
   headerRules,
   subrequestHeaders,
@@ -1260,5 +1410,5 @@ module.exports = {
   fetchEpisode,
   fetchEpisodeSources,
   fetchRecentEpisodes,
-  fetchTrending: fetchRecentEpisodes,
+  fetchTrending,
 };
