@@ -740,13 +740,16 @@ async function SearchAnime(query, page = 1) {
   const pageNum = normalizePage(page);
   const q = String(query || "").trim();
   if (!q) {
-    return { currentPage: pageNum, hasNextPage: false, totalPages: 0, results: [] };
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(pageNum);
+    }
+    return { currentPage: pageNum, current_page: pageNum, page: pageNum, hasNextPage: false, totalPages: 0, results: [] };
   }
 
   try {
     // 1. Try official JSON search endpoint
     try {
-      const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}`;
+      const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}&limit=100`;
       const res = await httpGet(searchUrl, {
         headers: {
           Accept: "application/json",
@@ -757,7 +760,7 @@ async function SearchAnime(query, page = 1) {
       const data = typeof res.data === "object" ? res.data : JSON.parse(res.data || "{}");
       const videos = data.videos || [];
       if (videos.length > 0) {
-        const results = [];
+        const allResults = [];
         const seen = new Set();
 
         for (const v of videos) {
@@ -766,7 +769,7 @@ async function SearchAnime(query, page = 1) {
           seen.add(seriesSlug);
 
           const img = v.thumb || v.cover || v.featureImage;
-          results.push({
+          allResults.push({
             id: seriesSlug,
             title: v.title || seriesSlug,
             image: img ? (img.startsWith("http") ? img : `${baseUrl}${img}`) : null,
@@ -778,11 +781,19 @@ async function SearchAnime(query, page = 1) {
           });
         }
 
+        const pageSize = 20;
+        const offset = (pageNum - 1) * pageSize;
+        const pageResults = allResults.slice(offset, offset + pageSize);
+        const totalPages = Math.ceil(allResults.length / pageSize) || 1;
+        const hasNextPage = offset + pageResults.length < allResults.length;
+
         return {
-          currentPage: 1,
-          hasNextPage: false,
-          totalPages: 1,
-          results,
+          currentPage: pageNum,
+          current_page: pageNum,
+          page: pageNum,
+          hasNextPage,
+          totalPages,
+          results: pageResults,
         };
       }
     } catch (_) {}
@@ -795,7 +806,7 @@ async function SearchAnime(query, page = 1) {
     const html = typeof res.data === "string" ? res.data : "";
     const rsc = extractRscPayload(html);
 
-    const results = [];
+    const allResults = [];
     const seen = new Set();
     const cleanQ = q.toLowerCase();
 
@@ -815,7 +826,7 @@ async function SearchAnime(query, page = 1) {
             ? (thumb.startsWith("http") ? thumb : `${baseUrl}${thumb}`)
             : null;
 
-          results.push({
+          allResults.push({
             id: slug,
             title,
             image,
@@ -826,15 +837,29 @@ async function SearchAnime(query, page = 1) {
       }
     }
 
+    const pageSize = 20;
+    const offset = (pageNum - 1) * pageSize;
+    const pageResults = allResults.slice(offset, offset + pageSize);
+    const totalPages = Math.ceil(allResults.length / pageSize) || 1;
+    const hasNextPage = offset + pageResults.length < allResults.length;
+
     return {
       currentPage: pageNum,
-      hasNextPage: false,
-      totalPages: 1,
-      results,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage,
+      totalPages,
+      results: pageResults,
     };
   } catch (err) {
-    console.error("HentaiTv SearchAnime error:", err.message);
-    return { currentPage: pageNum, hasNextPage: false, totalPages: 0, results: [] };
+    return {
+      currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage: false,
+      totalPages: 0,
+      results: [],
+    };
   }
 }
 
@@ -1559,7 +1584,7 @@ async function healId({ oldId, malid, title, folderName }) {
 
 module.exports = {
   name: "hentaitv",
-  version: "1.0.12",
+  version: "1.0.13",
   baseUrl,
   headerRules,
   subrequestHeaders,

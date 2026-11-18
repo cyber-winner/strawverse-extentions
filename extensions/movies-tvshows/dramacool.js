@@ -851,6 +851,9 @@ async function SearchAnime(query, page = 1) {
   const pageNum = normalizePage(page);
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(pageNum);
+    }
     return {
       results: [],
       hasNextPage: false,
@@ -1012,7 +1015,7 @@ async function SearchAnime(query, page = 1) {
 
     return {
       results: filteredResults,
-      hasNextPage: hasNext && filteredResults.length >= 10,
+      hasNextPage: (hasNext || pageNum < totalPages) && filteredResults.length > 0,
       currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
@@ -1444,7 +1447,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "dramacool",
-  version: "1.0.8",
+  version: "1.0.9",
   baseUrl,
   headerRules,
   subrequestHeaders,

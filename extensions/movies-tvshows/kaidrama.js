@@ -834,6 +834,9 @@ async function SearchAnime(query, page = 1) {
 
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(pageNum);
+    }
     return {
       results: [],
       hasNextPage: false,
@@ -927,7 +930,7 @@ async function SearchAnime(query, page = 1) {
 
     return {
       results: filteredResults,
-      hasNextPage: hasNext && filteredResults.length >= 18,
+      hasNextPage: (hasNext || pageNum < totalPages) && filteredResults.length > 0,
       currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
@@ -1421,7 +1424,7 @@ async function fetchRecentEpisodes(page = 1) {
 
 module.exports = {
   name: "kaidrama",
-  version: "1.0.5",
+  version: "1.0.6",
   baseUrl,
   headerRules,
   subrequestHeaders,

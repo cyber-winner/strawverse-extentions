@@ -218,26 +218,34 @@ async function searchManga(query, page = 1, filters = {}) {
       : filters
   );
   try {
+    const rawQuery = typeof query === "string" ? query.trim() : "";
+    if (!rawQuery) {
+      return latestManga(pageNum, filters);
+    }
+
     const pageSize = 20;
-    const cleanQuery = encodeURIComponent(
-      query.trim().toLowerCase().replace(/\s+/g, "_")
-    );
+    const cleanSpace = encodeURIComponent(rawQuery.toLowerCase());
+    const cleanDash = encodeURIComponent(rawQuery.toLowerCase().replace(/\s+/g, "-"));
+    const cleanUnderscore = encodeURIComponent(rawQuery.toLowerCase().replace(/\s+/g, "_"));
 
-    let nozomiUrl = `${ltnBase}/n/tag/${cleanQuery}-all.nozomi`;
+    const candidateUrls = [
+      `${ltnBase}/series/${cleanDash}-all.nozomi`,
+      `${ltnBase}/artist/${cleanDash}-all.nozomi`,
+      `${ltnBase}/tag/female:${cleanSpace}-all.nozomi`,
+      `${ltnBase}/tag/male:${cleanSpace}-all.nozomi`,
+      `${ltnBase}/tag/${cleanSpace}-all.nozomi`,
+      `${ltnBase}/tag/${cleanDash}-all.nozomi`,
+      `${ltnBase}/character/${cleanDash}-all.nozomi`,
+      `${ltnBase}/group/${cleanDash}-all.nozomi`,
+      `${ltnBase}/series/${cleanUnderscore}-all.nozomi`,
+    ];
+
     let res = null;
-
-    try {
-      res = await readNozomiIds(nozomiUrl, pageNum, pageSize);
-    } catch (_) {
+    for (const url of candidateUrls) {
       try {
-        nozomiUrl = `${ltnBase}/n/series/${cleanQuery}-all.nozomi`;
-        res = await readNozomiIds(nozomiUrl, pageNum, pageSize);
-      } catch (_) {
-        try {
-          nozomiUrl = `${ltnBase}/n/artist/${cleanQuery}-all.nozomi`;
-          res = await readNozomiIds(nozomiUrl, pageNum, pageSize);
-        } catch (_) {}
-      }
+        res = await readNozomiIds(url, pageNum, pageSize);
+        if (res && res.ids && res.ids.length > 0) break;
+      } catch (_) {}
     }
 
     if (!res || !res.ids || res.ids.length === 0) {
@@ -402,7 +410,7 @@ async function fetchChapterPages(chapterId) {
 
 module.exports = {
   name: "hitomi",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl,
   headerRules: [
     {

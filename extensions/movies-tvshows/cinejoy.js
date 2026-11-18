@@ -441,6 +441,9 @@ async function SearchAnime(query, filters = {}) {
     const page = normalizePage(filters);
     const cleanQuery = typeof query === "string" ? query.trim() : String(query || "");
     if (!cleanQuery) {
+      if (typeof fetchRecentEpisodes === "function") {
+        return fetchRecentEpisodes(page);
+      }
       return { currentPage: 1, hasNextPage: false, totalPages: 1, results: [] };
     }
 
@@ -803,7 +806,7 @@ async function doFetchEpisodeSources(episodeId) {
 
 module.exports = {
   name: "cinejoy",
-  version: "1.0.11",
+  version: "1.0.12",
   baseUrl,
   headerRules,
   subrequestHeaders,

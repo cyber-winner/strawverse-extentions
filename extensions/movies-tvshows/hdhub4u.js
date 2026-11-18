@@ -821,6 +821,9 @@ async function SearchAnime(query, page = 1) {
 
   const searchQuery = (query || "").trim();
   if (!searchQuery) {
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(pageNum);
+    }
     return {
       results: [],
       hasNextPage: false,
@@ -1709,7 +1712,7 @@ function getHeaders(targetUrl) {
 
 module.exports = {
   name: "hdhub4u",
-  version: "1.0.7",
+  version: "1.0.8",
   baseUrl,
   headerRules,
   subrequestHeaders,

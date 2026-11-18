@@ -550,19 +550,22 @@ function extractRscPayload(html) {
 }
 
 /**
- * Search anime titles
+ * Search anime titles with pagination support
  */
 async function SearchAnime(query, page = 1) {
   const pageNum = normalizePage(page);
   const q = String(query || "").trim();
   if (!q) {
-    return { currentPage: pageNum, hasNextPage: false, totalPages: 0, results: [] };
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(pageNum);
+    }
+    return { currentPage: pageNum, current_page: pageNum, page: pageNum, hasNextPage: false, totalPages: 0, results: [] };
   }
 
   try {
     // 1. Try official JSON search endpoint
     try {
-      const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}`;
+      const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}&limit=100`;
       const res = await httpGet(searchUrl, {
         headers: {
           Accept: "application/json",
@@ -571,7 +574,7 @@ async function SearchAnime(query, page = 1) {
       });
 
       const data = typeof res.data === "object" ? res.data : JSON.parse(res.data || "{}");
-      const results = [];
+      const allResults = [];
       const seen = new Set();
 
       // Check series list
@@ -579,7 +582,7 @@ async function SearchAnime(query, page = 1) {
       for (const s of seriesList) {
         if (!s.slug || seen.has(s.slug)) continue;
         seen.add(s.slug);
-        results.push({
+        allResults.push({
           id: s.slug,
           title: s.name || s.slug,
           image: null,
@@ -601,7 +604,7 @@ async function SearchAnime(query, page = 1) {
           img = `${baseUrl}/media/${img.replace(/^\/?(media\/)?/, "")}`;
         }
 
-        results.push({
+        allResults.push({
           id: seriesSlug,
           title: v.title ? v.title.replace(/\s+Episode\s+\d+.*$/i, "").trim() : seriesSlug,
           image: img || null,
@@ -611,12 +614,20 @@ async function SearchAnime(query, page = 1) {
         });
       }
 
-      if (results.length > 0) {
+      if (allResults.length > 0) {
+        const pageSize = 20;
+        const offset = (pageNum - 1) * pageSize;
+        const pageResults = allResults.slice(offset, offset + pageSize);
+        const totalPages = Math.ceil(allResults.length / pageSize) || 1;
+        const hasNextPage = offset + pageResults.length < allResults.length;
+
         return {
           currentPage: pageNum,
-          hasNextPage: false,
-          totalPages: 1,
-          results,
+          current_page: pageNum,
+          page: pageNum,
+          hasNextPage,
+          totalPages,
+          results: pageResults,
         };
       }
     } catch (_) {}
@@ -627,7 +638,7 @@ async function SearchAnime(query, page = 1) {
       headers: { Referer: `${baseUrl}/` },
     });
     const html = typeof htmlRes.data === "string" ? htmlRes.data : "";
-    const results = [];
+    const allResults = [];
     const seen = new Set();
 
     // Match series links
@@ -642,7 +653,7 @@ async function SearchAnime(query, page = 1) {
       let img = imgMatch ? imgMatch[1] : null;
       if (img && !img.startsWith("http")) img = `${baseUrl}${img}`;
 
-      results.push({
+      allResults.push({
         id: slug,
         title: titleMatch ? titleMatch[1].trim() : slug,
         image: img,
@@ -660,7 +671,7 @@ async function SearchAnime(query, page = 1) {
       if (seen.has(seriesSlug)) continue;
       seen.add(seriesSlug);
       const rawTitle = m[2].replace(/\s+Episode\s+\d+.*$/i, "").trim();
-      results.push({
+      allResults.push({
         id: seriesSlug,
         title: rawTitle || seriesSlug,
         image: null,
@@ -670,19 +681,28 @@ async function SearchAnime(query, page = 1) {
       });
     }
 
+    const pageSize = 20;
+    const offset = (pageNum - 1) * pageSize;
+    const pageResults = allResults.slice(offset, offset + pageSize);
+    const totalPages = Math.ceil(allResults.length / pageSize) || 1;
+    const hasNextPage = offset + pageResults.length < allResults.length;
+
     return {
       currentPage: pageNum,
-      hasNextPage: false,
-      totalPages: 1,
-      results,
+      current_page: pageNum,
+      page: pageNum,
+      hasNextPage,
+      totalPages,
+      results: pageResults,
     };
   } catch (err) {
     return {
       currentPage: pageNum,
+      current_page: pageNum,
+      page: pageNum,
       hasNextPage: false,
       totalPages: 0,
       results: [],
-      error: err.message,
     };
   }
 }
@@ -1335,7 +1355,7 @@ async function healId({ oldId, malid, title, folderName }) {
 
 module.exports = {
   name: "hanimetv",
-  version: "1.0.7",
+  version: "1.0.8",
   baseUrl,
   headerRules,
   subrequestHeaders,

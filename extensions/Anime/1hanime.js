@@ -1029,24 +1029,17 @@ async function solveNhPlayer(embedUrl) {
 }
 
 /**
- * Search anime catalog using official JSON search endpoint.
+ * Search anime catalog using official JSON search endpoint with pagination support.
  */
 async function SearchAnime(query, page = 1) {
   const pageNum = normalizePage(page);
   try {
     const q = String(query || "").trim();
     if (!q) {
-      return {
-        currentPage: pageNum,
-        current_page: pageNum,
-        page: pageNum,
-        hasNextPage: false,
-        totalPages: 0,
-        results: [],
-      };
+      return fetchRecentEpisodes(pageNum);
     }
 
-    const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}`;
+    const searchUrl = `${baseUrl}/api/search?q=${encodeURIComponent(q)}&limit=100`;
     const res = await httpGet(searchUrl, {
       headers: {
         Accept: "application/json",
@@ -1057,7 +1050,7 @@ async function SearchAnime(query, page = 1) {
     const data = typeof res.data === "object" ? res.data : JSON.parse(res.data || "{}");
     const videos = data.videos || [];
 
-    const results = [];
+    const allResults = [];
     const seen = new Set();
 
     for (const v of videos) {
@@ -1065,7 +1058,7 @@ async function SearchAnime(query, page = 1) {
       if (seen.has(seriesSlug)) continue;
       seen.add(seriesSlug);
 
-      results.push({
+      allResults.push({
         id: seriesSlug,
         title: v.title || seriesSlug,
         image: normalizeImageUrl(v.cover || v.thumb || v.featureImage),
@@ -1076,13 +1069,19 @@ async function SearchAnime(query, page = 1) {
       });
     }
 
+    const pageSize = 20;
+    const offset = (pageNum - 1) * pageSize;
+    const pageResults = allResults.slice(offset, offset + pageSize);
+    const totalPages = Math.ceil(allResults.length / pageSize) || 1;
+    const hasNextPage = offset + pageResults.length < allResults.length;
+
     return {
       currentPage: pageNum,
       current_page: pageNum,
       page: pageNum,
-      hasNextPage: false,
-      totalPages: 1,
-      results,
+      hasNextPage,
+      totalPages,
+      results: pageResults,
     };
   } catch (err) {
     console.error("1hanime SearchAnime error:", err.message);
@@ -1479,7 +1478,7 @@ async function healId({ oldId, malid, title, folderName }) {
 
 module.exports = {
   name: "1hanime",
-  version: "1.0.12",
+  version: "1.0.13",
   baseUrl,
   aliasUrl,
   headerRules,

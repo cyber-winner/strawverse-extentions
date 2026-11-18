@@ -512,6 +512,9 @@ async function SearchAnime(query, filters = {}) {
   const cleanQuery = typeof query === "string" ? query.trim() : String(query || "");
 
   if (!cleanQuery) {
+    if (typeof fetchRecentEpisodes === "function") {
+      return fetchRecentEpisodes(page);
+    }
     return { currentPage: 1, current_page: 1, page: 1, hasNextPage: false, totalPages: 1, results: [] };
   }
 
@@ -1050,7 +1053,7 @@ async function fetchEpisodeSources(episodeId, category = null) {
 
 module.exports = {
   name: "bingr",
-  version: "1.0.3",
+  version: "1.0.4",
   baseUrl: primaryBaseUrl,
   headerRules,
   subrequestHeaders,
